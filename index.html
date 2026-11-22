@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('tangent:theme');
+        var meta = document.querySelector('meta[name="color-scheme"]');
+        if (t === 'light') {
+          if (meta) meta.content = 'light';
+          document.documentElement.dataset.theme = 'light';
+        } else if (t === 'dark') {
+          if (meta) meta.content = 'dark';
+          document.documentElement.dataset.theme = 'dark';
+        } else if (t === 'oled') {
+          if (meta) meta.content = 'dark';
+          document.documentElement.dataset.theme = 'oled';
+        }
+        var prefs = JSON.parse(localStorage.getItem('tangent:v1:prefs') || '{}');
+        if (prefs.highContrast) document.documentElement.dataset.contrast = 'high';
+      } catch (e) {}
+    })();
+  </script>
+  <title>Tangent — Two pages. Fewest clicks.</title>
+  <meta name="description" content="Navigate from one Wikipedia article to another using only embedded links. Daily puzzles, 4 difficulty tiers, custom challenges, and 10-player live race rooms.">
+  <meta property="og:title" content="Tangent — Two pages. Fewest clicks.">
+  <meta property="og:description" content="A daily Wikipedia link-racing puzzle game with 10-player live rooms and 4 difficulty tiers. 100% free forever.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111214'/%3E%3Cpath d='M7 22h7l4-12h7' fill='none' stroke='%235372F8' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='7' cy='22' r='3' fill='%23FAF9F6'/%3E%3Ccircle cx='25' cy='10' r='3.5' fill='%23F7C948'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,800;1,9..144,600&family=IBM+Plex+Mono:wght@500;700&family=Libre+Franklin:wght@400;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <div style="display:flex;align-items:center;">
+        <button type="button" class="brand" id="brandBtn" aria-label="Tangent Home">
+          Tangent<span class="brand-dot">.</span>
+        </button>
+        <span class="vip-badge hide" id="vipBadge" title="Founding $0.00 Member">VIP · $0</span>
+      </div>
+
+      <nav class="nav-tabs" aria-label="Main navigation">
+        <button type="button" class="nav-tab active" data-tab="daily">Daily</button>
+        <button type="button" class="nav-tab" data-tab="packs">Packs</button>
+        <button type="button" class="nav-tab" data-tab="room">Live Room</button>
+        <button type="button" class="nav-tab" data-tab="custom">Custom</button>
+      </nav>
+
+      <div class="header-controls">
+        <button type="button" class="icon-btn pro-pill" id="proBtn" title="Totally real subscription">
+          Tangent+
+        </button>
+        <button type="button" class="icon-btn" id="soundBtn" aria-label="Toggle sound" title="Toggle sound (M)">
+          <svg class="icon-svg" id="soundIcon" viewBox="0 0 24 24" aria-hidden="true"></svg>
+        </button>
+        <button type="button" class="icon-btn" id="themeBtn" aria-label="Switch theme" title="Cycle Light / Dark / OLED (T)">
+          <svg class="icon-svg" id="themeIcon" viewBox="0 0 24 24" aria-hidden="true"></svg>
+          <span id="themeLabel">Light</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ==================== LANDING: DAILY, TIERS & PACKS ==================== -->
+    <section id="viewHome" class="container">
+      <div class="hero" id="dailySection">
+        <div class="countdown-pill">
+          <span>Next daily in</span>
+          <strong class="tabular" id="countdownText">--:--:--</strong>
+        </div>
+        <h1 class="hero-title">Two pages. Fewest clicks.</h1>
+        <p class="hero-sub">Navigate from one Wikipedia article to another using only embedded links. Built for quick coffee-break runs and 10-player friend races.</p>
+
+        <!-- Saved In-Progress Challenge Resume Banner -->
+        <div class="resume-banner hide" id="homeResumeBanner" aria-live="polite"></div>
+
+        <div class="daily-card">
+          <div class="daily-card-bar">
+            <span id="dailyBannerLabel">TODAY'S TANGENT #142</span>
+            <span class="daily-par-chip tabular" id="dailyParChip">PAR 4</span>
+          </div>
+          <div class="daily-card-body">
+            <div class="pair-display">
+              <span class="pair-pill" id="dailyStart">Genghis Khan</span>
+              <span class="pair-arrow" aria-hidden="true">→</span>
+              <span class="pair-pill target" id="dailyTarget">C-3PO</span>
+            </div>
+            <div class="daily-meta" id="dailyMeta"></div>
+            <div class="daily-actions">
+              <button type="button" class="btn btn-primary btn-lg" id="playDailyBtn">Play Daily</button>
+              <button type="button" class="btn btn-lg" id="hostDailyRoomBtn">Create 10-Player Room</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Weekday Streak & Archive Strip -->
+        <div class="streak-strip-wrap">
+          <div class="streak-caption" id="streakCaption">Start your daily streak</div>
+          <div class="weekday-strip" id="weekdayStrip"></div>
+        </div>
+
+        <!-- 5-Second Interactive Mini-Tutorial (auto-dismisses after 1 click) -->
+        <div class="mini-tutorial hide" id="miniTutorial">
+          <div>
+            <div class="mini-tut-kicker">5-Second Try-It</div>
+            <p class="mini-tut-text">
+              Target: <strong>Moon</strong>. Click the link that gets you closer:
+              <button type="button" class="mini-tut-link" id="tutDemoLink">Apollo 11</button>
+              was the spaceflight that first landed humans on Earth's natural satellite.
+            </p>
+          </div>
+          <button type="button" class="btn btn-sm btn-ghost" id="tutDismissBtn">Skip</button>
+        </div>
+      </div>
+
+      <!-- 4 Difficulty Tiers Selector + Generator -->
+      <div class="tier-showcase" id="tierSection">
+        <div class="tier-showcase-top">
+          <div>
+            <div class="game-goal-kicker">DIFFICULTY TIER & CHALLENGE GENERATOR</div>
+            <h2 class="section-title" style="margin-top:2px;">Choose Your Tier</h2>
+          </div>
+          <div class="tier-pills" role="group" aria-label="Difficulty tier">
+            <button type="button" class="tier-pill" data-tier="easy">Easy</button>
+            <button type="button" class="tier-pill active" data-tier="medium">Medium</button>
+            <button type="button" class="tier-pill" data-tier="hardcore">Hardcore</button>
+            <button type="button" class="tier-pill" data-tier="boss">Boss Mode</button>
+          </div>
+        </div>
+        <div class="tier-showcase-bar">
+          <div class="tier-rule-desc" id="tierRuleDesc">Par 4 · Cross-domain jumps · 2 Hints · Previews On</div>
+          <button type="button" class="btn btn-primary" id="rollTierBtn">Roll Medium Challenge</button>
+        </div>
+      </div>
+
+      <div id="packsSection">
+        <div class="section-head">
+          <h2 class="section-title">Curated Packs</h2>
+          <p class="section-sub" id="packsTierSub">Playing at <strong>Medium</strong> tier · Click a tier above to switch difficulty</p>
+        </div>
+        <div class="packs-grid" id="packsGrid"></div>
+      </div>
+    </section>
+
+    <!-- ==================== CUSTOM CHALLENGE VIEW ==================== -->
+    <section id="viewCustom" class="container-narrow hide">
+      <div class="panel-card">
+        <div class="section-head" style="margin-top:0;">
+          <div>
+            <h2 class="section-title">Custom Challenge</h2>
+            <p class="section-sub">Pick any two Wikipedia articles in 15 languages — or apply a preset difficulty tier.</p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Difficulty Rules Preset</label>
+          <div class="tier-pills" role="group" aria-label="Custom difficulty preset">
+            <button type="button" class="tier-pill" data-custom-tier="easy">Easy</button>
+            <button type="button" class="tier-pill active" data-custom-tier="medium">Medium</button>
+            <button type="button" class="tier-pill" data-custom-tier="hardcore">Hardcore</button>
+            <button type="button" class="tier-pill" data-custom-tier="boss">Boss Mode</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="customLangTrigger">Wikipedia Language</label>
+          <div class="lang-picker" id="customLangPicker"></div>
+        </div>
+
+        <div class="field">
+          <label for="customStartInput">Start Article</label>
+          <input type="text" id="customStartInput" class="input" placeholder="e.g. Genghis Khan" autocomplete="off">
+          <ul class="ac-list hide" id="customStartAC"></ul>
+        </div>
+
+        <div class="field">
+          <label for="customTargetInput">Target Article</label>
+          <input type="text" id="customTargetInput" class="input" placeholder="e.g. C-3PO" autocomplete="off">
+          <ul class="ac-list hide" id="customTargetAC"></ul>
+        </div>
+
+        <div class="toggle-row">
+          <div>
+            <strong>Link Hover Previews</strong>
+            <small>Show sleek Wikipedia preview cards on hover</small>
+          </div>
+          <input type="checkbox" id="customPreviews" class="switch-input" checked>
+        </div>
+
+        <div class="toggle-row">
+          <div>
+            <strong>Ban Mega-Hubs (Hardcore / Boss)</strong>
+            <small>Blocks shortcut pages like United States, Europe, World War II</small>
+          </div>
+          <input type="checkbox" id="customBanHubs" class="switch-input">
+        </div>
+
+        <div class="toggle-row">
+          <div>
+            <strong>Lock Infobox Links (Boss Mode)</strong>
+            <small>Requires navigating purely through article prose</small>
+          </div>
+          <input type="checkbox" id="customLockInfobox" class="switch-input">
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;">
+          <button type="button" class="btn btn-primary btn-lg" id="playCustomBtn">Start Challenge</button>
+          <button type="button" class="btn btn-lg" id="rollCustomPairBtn">Roll Random Pair</button>
+          <button type="button" class="btn btn-lg" id="copyCustomLinkBtn">Copy Friend Link</button>
+          <button type="button" class="btn btn-lg" id="customToRoomBtn">Turn Into 10-Player Room</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 10-PLAYER LIVE RACE ROOM VIEW ==================== -->
+    <section id="viewRoom" class="container hide">
+      <div id="roomSetupPanel" class="panel-grid">
+        <!-- Create Room -->
+        <div class="panel-card" style="margin:0;">
+          <h2 class="section-title" style="margin-bottom:6px;">Host a Live Room</h2>
+          <p class="section-sub" style="margin-bottom:18px;">Up to 10 players race simultaneously on the exact same Wikipedia pair.</p>
+
+          <div class="field">
+            <label for="hostNameInput">Your Display Name</label>
+            <input type="text" id="hostNameInput" class="input" maxlength="18" placeholder="e.g. Aarav">
+          </div>
+
+          <div class="field">
+            <label>Difficulty Tier</label>
+            <div class="tier-pills" role="group" aria-label="Room difficulty tier">
+              <button type="button" class="tier-pill" data-room-tier="easy">Easy</button>
+              <button type="button" class="tier-pill active" data-room-tier="medium">Medium</button>
+              <button type="button" class="tier-pill" data-room-tier="hardcore">Hardcore</button>
+              <button type="button" class="tier-pill" data-room-tier="boss">Boss Mode</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="roomLangTrigger">Wikipedia Language</label>
+            <div class="lang-picker" id="roomLangPicker"></div>
+          </div>
+
+          <div class="field">
+            <label for="roomStartInput">Start Article</label>
+            <input type="text" id="roomStartInput" class="input" placeholder="Leave blank to roll by tier" autocomplete="off">
+            <ul class="ac-list hide" id="roomStartAC"></ul>
+          </div>
+
+          <div class="field">
+            <label for="roomTargetInput">Target Article</label>
+            <input type="text" id="roomTargetInput" class="input" placeholder="Leave blank to roll by tier" autocomplete="off">
+            <ul class="ac-list hide" id="roomTargetAC"></ul>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <strong>Scoring Mode</strong>
+              <small>Choose what decides 1st place</small>
+            </div>
+            <div class="mode-pills" role="group" aria-label="Scoring mode">
+              <button type="button" class="mode-pill active" data-room-mode="clicks">Fewest Clicks</button>
+              <button type="button" class="mode-pill" data-room-mode="speed">Speedrun</button>
+            </div>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <strong>Link Hover Previews</strong>
+              <small>Turn off for blind competitive races</small>
+            </div>
+            <input type="checkbox" id="roomPreviews" class="switch-input" checked>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <strong>Ban Mega-Hubs</strong>
+              <small>Disable United States, Europe, World War II, etc.</small>
+            </div>
+            <input type="checkbox" id="roomBanHubs" class="switch-input">
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <strong>Lock Infobox Links (Prose Only)</strong>
+              <small>Boss Mode rule: disable shortcut links in the side Infobox</small>
+            </div>
+            <input type="checkbox" id="roomLockInfobox" class="switch-input">
+          </div>
+
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
+            <button type="button" class="btn btn-primary btn-lg" id="createRoomBtn">Create Room</button>
+            <button type="button" class="btn" id="roomRandomPairBtn">Roll Tier Pair</button>
+          </div>
+        </div>
+
+        <!-- Join Room -->
+        <div class="panel-card" style="margin:0;align-self:start;">
+          <h2 class="section-title" style="margin-bottom:6px;">Join a Room</h2>
+          <p class="section-sub" style="margin-bottom:18px;">Got a 6-letter code or invite link from a friend? Jump right in.</p>
+
+          <div class="field">
+            <label for="joinNameInput">Your Display Name</label>
+            <input type="text" id="joinNameInput" class="input" maxlength="18" placeholder="e.g. Maya">
+          </div>
+
+          <div class="field">
+            <label for="joinCodeInput">Room Code</label>
+            <input type="text" id="joinCodeInput" class="input tabular" maxlength="8" placeholder="XK49TP" style="text-transform:uppercase;letter-spacing:0.14em;font-weight:700;">
+          </div>
+
+          <button type="button" class="btn btn-pop btn-lg" id="joinRoomBtn" style="width:100%;">Join Race Lobby</button>
+          <p id="roomJoinError" style="color:var(--pop-coral);font-size:0.86rem;font-weight:600;margin-top:10px;" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <!-- Active Lobby Panel -->
+      <div id="roomLobbyPanel" class="panel-card hide">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;">
+          <div>
+            <div class="game-goal-kicker" id="lobbyRoundLabel">LIVE RACE ROOM · ROUND 1</div>
+            <h2 class="section-title" id="lobbyPairTitle">Genghis Khan → C-3PO</h2>
+            <p class="section-sub" id="lobbyRulesSummary"></p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div class="room-code-box" id="lobbyCodeDisplay">------</div>
+            <button type="button" class="btn" id="copyRoomInviteBtn">Copy Invite Link</button>
+          </div>
+        </div>
+
+        <div class="section-head" style="margin:10px 0 8px;">
+          <h3 style="margin:0;font-size:1rem;" id="lobbyPlayerCount">Players (1 / 10)</h3>
+          <span class="section-sub">Synced live · 60s grace timer after 1st finisher</span>
+        </div>
+        <div class="roster-grid" id="lobbyRoster"></div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+          <button type="button" class="btn btn-ghost" id="leaveRoomBtn">Leave Room</button>
+          <div id="lobbyHostControls" style="display:flex;gap:10px;align-items:center;">
+            <span id="lobbyWaitText" class="section-sub hide">Waiting for host to start the countdown…</span>
+            <button type="button" class="btn btn-primary btn-lg" id="startRoomRaceBtn">Start Race (3-2-1)</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== IN-GAME 3-COLUMN COLLAPSIBLE READER VIEW ==================== -->
+    <section id="viewGame" class="hide">
+      <div class="game-bar">
+        <div class="container-wide game-bar-inner">
+          <button type="button" class="btn btn-sm" id="quitGameBtn" aria-label="Exit to Home">← Home</button>
+          <div class="game-goal">
+            <div class="game-goal-kicker" id="gameModeLabel">DAILY #142</div>
+            <div class="game-goal-target">Reach <span id="gameTargetLabel">C-3PO</span></div>
+          </div>
+          <div class="game-metrics">
+            <div class="metric-box tabular" id="timerBox" title="Elapsed time">0:00</div>
+            <div class="metric-box clicks tabular" id="clicksBox" title="Clicks + Hints">0</div>
+          </div>
+          <div class="game-actions">
+            <button type="button" class="btn btn-sm" id="backBtn" title="Step back [Backspace]">Back (+1)</button>
+            <button type="button" class="btn btn-sm" id="hintBtn" title="Reveal clue [H]">Hint (+1)</button>
+            <button type="button" class="btn btn-sm" id="pauseBtn" title="Freeze timer [P]">Pause</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="container-wide">
+        <!-- Live 10-player race progress strip (shown only in Room mode) -->
+        <div class="race-strip hide" id="raceStrip">
+          <div class="race-strip-head">
+            <span id="raceStripTitle">LIVE ROOM RACE</span>
+            <span class="race-grace" id="raceGraceText"></span>
+          </div>
+          <div class="race-players" id="racePlayersList"></div>
+        </div>
+
+        <div class="trail-bar" id="trailBar" aria-label="Your article path"></div>
+        <div class="hints-stack" id="hintsStack"></div>
+
+        <!-- 3-Column Collapsible Reader Layout: Left Contents Rail · Center Prose · Right Quick Facts/Infobox Rail -->
+        <div class="reader-layout" id="readerLayout">
+          <!-- LEFT COLLAPSIBLE RAIL: Table of Contents -->
+          <aside class="side-rail toc-rail" id="tocRail" aria-label="Article contents">
+            <div class="rail-header">
+              <button type="button" class="rail-toggle-btn" id="toggleTocBtn" title="Collapse or expand Contents">
+                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="18" y2="18"/></svg>
+                <span class="rail-title-text">Contents</span>
+                <span class="rail-chevron" id="tocChevron">‹</span>
+              </button>
+            </div>
+            <div class="rail-body" id="tocBody">
+              <nav class="toc-nav" id="tocList" aria-label="Sections"></nav>
+            </div>
+          </aside>
+
+          <!-- CENTER READING COLUMN: Pure Editorial Prose -->
+          <article class="article-shell" id="articleShell">
+            <div class="article-status-bar hide" id="articleStatusBar" role="status" aria-live="polite"></div>
+            <div class="wiki-article" id="wikiArticle"></div>
+          </article>
+
+          <!-- RIGHT COLLAPSIBLE RAIL: Quick Facts / Infobox & Series Box -->
+          <aside class="side-rail aside-rail" id="asideRail" aria-label="Article quick facts and infobox">
+            <div class="rail-header">
+              <button type="button" class="rail-toggle-btn" id="toggleAsideBtn" title="Collapse or expand Quick Facts & Infobox">
+                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+                <span class="rail-title-text">Quick Facts</span>
+                <span class="rail-chevron" id="asideChevron">›</span>
+              </button>
+            </div>
+            <div class="rail-body" id="asideBody">
+              <div class="wiki-article aside-wiki-content" id="wikiAsideContent"></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== WIN / SUMMARY / PODIUM VIEW ==================== -->
+    <section id="viewWin" class="container-narrow win-view hide">
+      <div id="winContent"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div>Article text & images from Wikipedia (CC BY-SA 4.0). Tangent is not affiliated with the Wikimedia Foundation.</div>
+      <div class="footer-links">
+        <button type="button" class="link-btn" id="contrastToggleBtn">High Contrast: Off</button>
+        <button type="button" class="link-btn" id="footerArchiveBtn">Daily Archive</button>
+        <button type="button" class="link-btn" id="footerProBtn">Tangent+ ($0/forever)</button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Sleek Rounded Wikipedia Hovercard (native popover) -->
+  <div id="wikiHovercard" popover="manual" class="wiki-hovercard" role="tooltip"></div>
+
+  <!-- Synchronized 3-2-1 Countdown Overlay for Live Rooms -->
+  <div id="countdownOverlay" class="countdown-overlay hide" aria-live="assertive">
+    <div>
+      <div style="color:#fff;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px;" id="countdownPair"></div>
+      <div class="countdown-num" id="countdownNum">3</div>
+    </div>
+  </div>
+
+  <!-- Floating Non-Shifting Toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Native <dialog> Modals -->
+  <dialog id="pauseDialog" closedby="none" aria-labelledby="pauseTitle">
+    <div class="dialog-inner">
+      <div class="dialog-head" style="justify-content:center;text-align:center;flex-direction:column;gap:4px;">
+        <h2 id="pauseTitle">Game Paused</h2>
+        <div class="section-sub tabular" id="pauseSubtitle">Timer frozen</div>
+      </div>
+      <div class="pg-stage" id="pauseStage"></div>
+    </div>
+  </dialog>
+
+  <dialog id="paywallDialog" closedby="any" aria-labelledby="paywallTitle">
+    <div class="dialog-inner" style="text-align:center;" id="paywallBody"></div>
+  </dialog>
+
+  <dialog id="resumeDialog" aria-labelledby="resumeTitle">
+    <div class="dialog-inner" id="resumeDialogBody"></div>
+  </dialog>
+
+  <dialog id="archiveDialog" closedby="any" aria-labelledby="archiveTitle">
+    <div class="dialog-inner">
+      <div class="dialog-head">
+        <h2 id="archiveTitle">Daily Tangent Archive</h2>
+        <form method="dialog">
+          <button type="submit" class="btn btn-sm">Close</button>
+        </form>
+      </div>
+      <p class="section-sub">Play any past daily puzzle — solved days show your best click count.</p>
+      <div class="archive-grid" id="archiveGrid"></div>
+    </div>
+  </dialog>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

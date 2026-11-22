@@ -1,0 +1,337 @@
+/* Native-Themed Editorial Wikipedia Reader
+ * Automatically adapts Wikipedia HTML, infoboxes, tables, figures,
+ * and math formulas to Tangent's Light, Dark, and OLED True Black themes.
+ */
+
+.wiki-article {
+  font-family: var(--font-serif);
+  font-size: 1.08rem;
+  line-height: 1.72;
+  color: var(--ink);
+  word-wrap: break-word;
+}
+
+.wiki-article-header {
+  padding-bottom: 14px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wiki-article-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.85rem, 4vw, 2.55rem);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  margin: 0 0 4px;
+}
+
+.wiki-article-sub {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.wiki-article p {
+  margin: 0 0 1.05em;
+  max-width: 72ch;
+}
+
+.wiki-article h2,
+.wiki-article .mw-heading2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.48rem;
+  letter-spacing: -0.02em;
+  margin: 1.8em 0 0.65em;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  clear: both;
+}
+
+.wiki-article h3,
+.wiki-article .mw-heading3 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin: 1.4em 0 0.45em;
+}
+
+.wiki-article h4,
+.wiki-article .mw-heading4 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--muted);
+  margin: 1.1em 0 0.4em;
+}
+
+.wiki-article .mw-heading2 h2,
+.wiki-article .mw-heading3 h3,
+.wiki-article .mw-heading4 h4 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: inherit;
+}
+
+.wiki-article ul,
+.wiki-article ol {
+  margin: 0 0 1.1em;
+  padding-left: 1.5em;
+  max-width: 70ch;
+}
+
+.wiki-article li {
+  margin-bottom: 0.35em;
+}
+
+.wiki-article blockquote {
+  margin: 1.2em 0;
+  padding: 10px 18px;
+  border-left: 4px solid var(--pop-periwinkle);
+  background: var(--surface-2);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-style: italic;
+}
+
+/* Playable Internal Links */
+.wiki-article a.wiki-link {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  border-radius: 4px;
+  padding: 0 1px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.wiki-article a.wiki-link:hover,
+.wiki-article a.wiki-link:focus-visible {
+  background: var(--link-bg-hover);
+  text-decoration-thickness: 2px;
+}
+
+.wiki-article a.wiki-link-banned {
+  color: var(--pop-coral);
+  text-decoration: line-through dashed 1.5px;
+  cursor: not-allowed;
+  opacity: 0.78;
+}
+
+/* Infobox & Series Cards inside the Right Collapsible Rail */
+.aside-wiki-content {
+  font-family: var(--font-sans);
+  font-size: 0.83rem;
+  line-height: 1.45;
+}
+
+.wiki-article table.infobox,
+.wiki-article table.sidebar,
+.wiki-article .sidebar,
+.wiki-article .vertical-navbox {
+  width: 100%;
+  margin: 0 0 14px 0;
+  float: none;
+  clear: both;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface-2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  line-height: 1.42;
+  color: var(--ink) !important;
+}
+
+.wiki-article table.infobox caption,
+.wiki-article table.infobox .infobox-title,
+.wiki-article table.infobox .infobox-above,
+.wiki-article table.sidebar .sidebar-title,
+.wiki-article table.sidebar .sidebar-pretitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 10px 12px;
+  text-align: center;
+  background: var(--surface) !important;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink) !important;
+}
+
+.wiki-article table.infobox th,
+.wiki-article table.infobox td,
+.wiki-article table.sidebar th,
+.wiki-article table.sidebar td {
+  padding: 6px 10px;
+  vertical-align: top;
+  border-top: 1px solid var(--border) !important;
+  background: transparent !important;
+  color: var(--ink) !important;
+  text-align: left;
+}
+
+.wiki-article table.infobox .infobox-header,
+.wiki-article table.sidebar .sidebar-heading {
+  background: var(--surface) !important;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  color: var(--muted) !important;
+}
+
+.wiki-article table.infobox .infobox-label {
+  font-weight: 700;
+  color: var(--muted) !important;
+  width: 38%;
+}
+
+.wiki-article table.infobox .infobox-image,
+.wiki-article table.infobox .infobox-full-data,
+.wiki-article table.sidebar .sidebar-image {
+  text-align: center;
+}
+
+.wiki-article table.infobox img,
+.wiki-article table.sidebar img {
+  border-radius: 8px;
+  max-height: 230px;
+  width: auto;
+  object-fit: contain;
+  margin: 4px auto;
+  display: block;
+}
+
+/* Figures, Thumbnails & Images */
+.wiki-article figure,
+.wiki-article .thumb {
+  margin: 14px 0 18px 20px;
+  float: right;
+  clear: right;
+  max-width: min(280px, 100%);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.wiki-article figure.mw-halign-left,
+.wiki-article .tleft {
+  float: left;
+  clear: left;
+  margin: 14px 20px 18px 0;
+}
+
+.wiki-article figure img,
+.wiki-article .thumb img {
+  border-radius: 8px;
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.wiki-article figcaption,
+.wiki-article .thumbcaption {
+  padding: 7px 4px 2px;
+}
+
+/* Tables */
+.wiki-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  margin: 18px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.wiki-article table.wikitable {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+}
+
+.wiki-article table.wikitable th {
+  background: var(--surface-2) !important;
+  font-weight: 700;
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wiki-article table.wikitable td {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: transparent !important;
+}
+
+/* Gallery */
+.wiki-article ul.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  max-width: none;
+}
+
+.wiki-article li.gallerybox {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.wiki-article li.gallerybox img {
+  border-radius: 6px;
+  margin: 0 auto 6px;
+  display: block;
+}
+
+/* Dark & OLED safety for dark-ink math formulas & transparent SVGs */
+:root[data-theme="dark"] .wiki-article img.mwe-math-fallback-image-inline,
+:root[data-theme="dark"] .wiki-article img.mwe-math-fallback-image-display,
+:root[data-theme="oled"] .wiki-article img.mwe-math-fallback-image-inline,
+:root[data-theme="oled"] .wiki-article img.mwe-math-fallback-image-display {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .wiki-article img.mwe-math-fallback-image-inline,
+  :root:not([data-theme="light"]) .wiki-article img.mwe-math-fallback-image-display {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
+
+.wiki-article::after {
+  content: '';
+  display: table;
+  clear: both;
+}
+
+@media (max-width: 720px) {
+  .wiki-article table.infobox,
+  .wiki-article figure,
+  .wiki-article .thumb,
+  .wiki-article figure.mw-halign-left,
+  .wiki-article .tleft {
+    float: none;
+    width: 100%;
+    max-width: 100%;
+    margin: 14px 0 18px;
+  }
+}

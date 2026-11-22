@@ -1,0 +1,118 @@
+/* Tangent Design System Tokens
+ * 3 Themes: Light (NYT Editorial Pop), Dark (Ponder Club Neutral Charcoal), OLED (Pure #000000)
+ * All 3 themes share the exact same vibrant popping editorial accent palette.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Editorial Typography Trio */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-sans: 'Libre Franklin', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Identical Popping Editorial Accents across Light, Dark & OLED */
+  --pop-periwinkle: #5372f8;
+  --pop-marigold: #f7c948;
+  --pop-coral: #ff7a90;
+  --pop-mint: #65c99a;
+  --pop-lilac: #b695f8;
+  --pop-ink-on-pop: #111214;
+
+  /* Default Light Theme (NYT Editorial Pop) */
+  --bg: #faf9f6;
+  --surface: #ffffff;
+  --surface-2: #f2f0ea;
+  --surface-hover: #ebe8e0;
+  --ink: #111214;
+  --muted: #5c616a;
+  --border: #e3e1da;
+  --border-strong: #111214;
+  --link: #2f52e8;
+  --link-bg-hover: rgba(83, 114, 248, 0.14);
+  --shadow-sm: 0 1px 2px rgba(17, 18, 20, 0.05);
+  --shadow-md: 0 8px 24px rgba(17, 18, 20, 0.08);
+  --shadow-card: 0 4px 18px rgba(17, 18, 20, 0.06);
+  --backdrop: rgba(17, 18, 20, 0.52);
+
+  /* Radii & Spacing */
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-pill: 999px;
+}
+
+/* Reflect explicit <meta name="color-scheme"> overrides back into CSS cascade */
+:root:has(> head > meta[name="color-scheme"][content="dark"]) {
+  color-scheme: dark;
+}
+
+:root:has(> head > meta[name="color-scheme"][content="light"]) {
+  color-scheme: light;
+}
+
+/* System Dark Preference (when no explicit override is set) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="oled"]) {
+    --bg: #121213;
+    --surface: #1b1c1e;
+    --surface-2: #24262a;
+    --surface-hover: #2d3036;
+    --ink: #f4f4f5;
+    --muted: #9b9fa6;
+    --border: #2a2c30;
+    --border-strong: #f4f4f5;
+    --link: #7d98ff;
+    --link-bg-hover: rgba(125, 152, 255, 0.18);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.5);
+    --shadow-card: 0 6px 22px rgba(0, 0, 0, 0.35);
+    --backdrop: rgba(0, 0, 0, 0.68);
+  }
+}
+
+/* Explicit Dark Mode (Ponder Club Neutral Charcoal, zero background clutter) */
+:root[data-theme="dark"] {
+  --bg: #121213;
+  --surface: #1b1c1e;
+  --surface-2: #24262a;
+  --surface-hover: #2d3036;
+  --ink: #f4f4f5;
+  --muted: #9b9fa6;
+  --border: #2a2c30;
+  --border-strong: #f4f4f5;
+  --link: #7d98ff;
+  --link-bg-hover: rgba(125, 152, 255, 0.18);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 6px 22px rgba(0, 0, 0, 0.35);
+  --backdrop: rgba(0, 0, 0, 0.68);
+}
+
+/* Explicit OLED True Black Mode (Pure #000000 with identical popping accents) */
+:root[data-theme="oled"] {
+  --bg: #000000;
+  --surface: #0a0b0d;
+  --surface-2: #14161a;
+  --surface-hover: #1e2027;
+  --ink: #ffffff;
+  --muted: #9a9ea6;
+  --border: #202229;
+  --border-strong: #ffffff;
+  --link: #7d98ff;
+  --link-bg-hover: rgba(125, 152, 255, 0.2);
+  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-md: 0 16px 36px rgba(0, 0, 0, 0.9);
+  --shadow-card: 0 0 0 1px #202229;
+  --backdrop: rgba(0, 0, 0, 0.82);
+}
+
+/* High-Contrast / Colorblind-Friendly Mode */
+:root[data-contrast="high"] {
+  --border: var(--muted);
+}
+:root[data-contrast="high"] .wiki-link {
+  text-decoration-thickness: 2px !important;
+  font-weight: 600;
+}
