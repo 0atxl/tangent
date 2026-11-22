@@ -1,0 +1,25 @@
+# Dependencies & build output
+node_modules/
+dist/
+.vercel/
+
+# Environment & logs
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+
+# Agent-facing docs, configs & scratch files
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.agent/
+.agents/
+.claude/
+.cursor/
+.gemini/
+.codex/
+docs/
+references/
+scratch/

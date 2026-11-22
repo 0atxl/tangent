@@ -1,0 +1,19 @@
+{
+  "name": "tangent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tangent — Reach any Wikipedia article in the fewest clicks.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "verify-packs": "node scripts/verify-packs.mjs"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.4"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}
