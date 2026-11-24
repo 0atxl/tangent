@@ -37,15 +37,16 @@ function localApiPlugin() {
 
           if (!relPath) return next();
 
-          // Parse JSON body for POST/PUT
+          // Parse request body for non-GET/HEAD requests
+          let rawBody = '';
           let body = {};
-          if (req.method === 'POST' || req.method === 'PUT') {
+          if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
             const chunks = [];
             for await (const chunk of req) chunks.push(chunk);
-            const raw = Buffer.concat(chunks).toString('utf8');
-            if (raw) {
+            rawBody = Buffer.concat(chunks).toString('utf8');
+            if (rawBody) {
               try {
-                body = JSON.parse(raw);
+                body = JSON.parse(rawBody);
               } catch {
                 body = {};
               }
@@ -57,7 +58,70 @@ function localApiPlugin() {
 
           const absUrl = pathToFileURL(path.resolve(projectRoot, relPath)).href;
           const mod = await import(`${absUrl}?t=${Date.now()}`);
+
+          // Web Standard Fetch API handler (e.g. `export async function GET(request)`)
+          const webHandler = mod[req.method];
+          if (typeof webHandler === 'function') {
+            const reqHeaders = new Headers();
+            for (const [k, v] of Object.entries(req.headers || {})) {
+              if (Array.isArray(v)) {
+                for (const item of v) reqHeaders.append(k, item);
+              } else if (v !== undefined) {
+                reqHeaders.set(k, String(v));
+              }
+            }
+
+            const reqAbort = new AbortController();
+            let bodyReader = null;
+            res.on('close', () => {
+              if (!res.writableEnded) {
+                reqAbort.abort();
+                bodyReader?.cancel().catch(() => {});
+              }
+            });
+
+            const webReq = new Request(urlObj.href, {
+              method: req.method,
+              headers: reqHeaders,
+              signal: reqAbort.signal,
+              ...(req.method !== 'GET' && req.method !== 'HEAD' && rawBody ? { body: rawBody } : {})
+            });
+
+            const webRes = await webHandler(webReq);
+            res.statusCode = webRes.status;
+            webRes.headers.forEach((value, key) => {
+              res.setHeader(key, value);
+            });
+            if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+            if (!webRes.body) {
+              res.end();
+              return;
+            }
+
+            bodyReader = webRes.body.getReader();
+
+            try {
+              while (true) {
+                const { value, done } = await bodyReader.read();
+                if (done) break;
+                res.write(value);
+              }
+              res.end();
+            } catch (streamErr) {
+              if (typeof res.destroy === 'function') res.destroy(streamErr);
+              else res.end();
+            }
+            return;
+          }
+
           const handler = mod.default;
+          if (typeof handler !== 'function') {
+            res.statusCode = 405;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ error: 'Method not allowed' }));
+            return;
+          }
 
           const mockReq = {
             method: req.method,

@@ -1,8 +1,10 @@
 /**
- * Vercel CDN-cached streaming Wikipedia Parsoid HTML proxy.
- * - Streams Parsoid HTML from Wikimedia via ReadableStream
- * - Strips <style>/<script> blocks and cancels the upstream download early
- *   the instant boilerplate trailing sections (References, External links, etc.) begin
+ * Vercel CDN-cached streaming Wikipedia Parsoid HTML proxy (Web Standard Fetch handler).
+ * - Uses `export async function GET(request)` returning `new Response(ReadableStream)` for
+ *   true unbuffered cold-miss edge streaming on Vercel's Node.js runtime
+ * - Streams Parsoid HTML from Wikimedia via ReadableStream, stripping <style>/<script>/<link>
+ *   blocks and cancelling the upstream download early the instant boilerplate trailing sections
+ *   (References, External links, etc.) begin
  * - Caches the trimmed HTML globally at Vercel's Edge CDN for 24h (7d SWR),
  *   cutting repeat TTFB from ~600ms to ~50-120ms without consuming Upstash Redis quota.
  */
@@ -16,6 +18,7 @@ const STREAM_ABORT_HEADING_RE =
   /^(references|external links|further reading|bibliography|see also|citations|footnotes|referencias|enlaces externos|véase también|notes et références|liens externes|voir aussi|einzelnachweise|weblinks|siehe auch|collegamenti esterni|voci correlate|referências|ligações externas|ver também|примечания|ссылки|см\.\s*также|脚注|外部リンク|関連項目|参考文献|参考资料|外部链接|参见|각주|외부 링크|같이 보기|सन्दर्भ|बाहरी कड़ियाँ|इन्हें भी देखें|مراجع|وصلات خارجية|انظر أيضاً|kaynakça|dış bağlantılar|ayrıca bakınız|przypisy|linki zewnętrzne|zobacz też|externe links|zie ook)$/i;
 
 const SKIP_IF_REF_HEADING_RE = /^(notes|note|noten|sources|explanatory notes)$/i;
+const SECTION_TAG_RE = /<(\/?)section\b[^>]*>/gi;
 
 function toWikiPathTitle(title) {
   const trimmed = String(title || '').trim().replace(/ /g, '_');
@@ -88,31 +91,61 @@ function trimSectionMarkup(sectionHtml) {
     .replace(/<link\b[^>]*>/gi, '');
 }
 
-const SECTION_TAG_RE = /<(\/?)section\b[^>]*>/gi;
+function buildSuccessHeaders(canonical, trimmed = '1') {
+  return {
+    'Content-Type': 'text/html; charset=utf-8',
+    'X-Wiki-Canonical-Title': encodeURIComponent(canonical),
+    'X-Wiki-Trimmed': trimmed,
+    'Cache-Control': 'public, max-age=300, s-maxage=86400, stale-while-revalidate=604800',
+    'CDN-Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800',
+    'Vercel-CDN-Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800'
+  };
+}
 
-export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const rawLang = String(req.query?.lang || 'en').trim().toLowerCase();
-  const rawTitle = String(req.query?.title || '').trim();
+export async function GET(request) {
+  const url = new URL(request.url);
+  const rawLang = String(url.searchParams.get('lang') || 'en').trim().toLowerCase();
+  const rawTitle = String(url.searchParams.get('title') || '').trim();
 
   if (!/^[a-z-]{2,12}$/i.test(rawLang)) {
-    return res.status(400).json({ error: 'Invalid language code' });
+    return Response.json(
+      { error: 'Invalid language code' },
+      { status: 400, headers: { 'Cache-Control': 'no-store' } }
+    );
   }
   if (!rawTitle || rawTitle.length > 260) {
-    return res.status(400).json({ error: 'Missing or invalid title' });
+    return Response.json(
+      { error: 'Missing or invalid title' },
+      { status: 400, headers: { 'Cache-Control': 'no-store' } }
+    );
   }
 
   const pathTitle = toWikiPathTitle(rawTitle);
   const upstreamUrl = `https://${rawLang}.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(pathTitle)}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 9000);
+  const upstreamCtrl = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    upstreamCtrl.abort(new DOMException('Wikipedia proxy timed out', 'TimeoutError'));
+  }, 9000);
+
+  const onReqAbort = () => upstreamCtrl.abort(request.signal?.reason || new DOMException('Client disconnected', 'AbortError'));
+  if (request.signal) {
+    if (request.signal.aborted) {
+      clearTimeout(timer);
+      return new Response(null, { status: 499, headers: { 'Cache-Control': 'no-store' } });
+    }
+    request.signal.addEventListener('abort', onReqAbort, { once: true });
+  }
+
+  const cleanupUpstreamListeners = () => {
+    clearTimeout(timer);
+    request.signal?.removeEventListener('abort', onReqAbort);
+  };
 
   try {
     const upstream = await fetch(upstreamUrl, {
-      signal: controller.signal,
+      signal: upstreamCtrl.signal,
       headers: {
         'User-Agent': UA,
         'Api-User-Agent': UA,
@@ -121,189 +154,215 @@ export default async function handler(req, res) {
     });
 
     if (!upstream.ok) {
-      clearTimeout(timer);
-      res.setHeader('Cache-Control', 'no-store');
-      return res.status(upstream.status).json({ error: `Wikipedia returned ${upstream.status}` });
+      cleanupUpstreamListeners();
+      return Response.json(
+        { error: `Wikipedia returned ${upstream.status}` },
+        { status: upstream.status, headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     const reader = upstream.body?.getReader?.();
     if (!reader) {
       const fullHtml = await upstream.text();
-      clearTimeout(timer);
+      cleanupUpstreamListeners();
       const canonical = extractCanonicalTitle(fullHtml.slice(0, 8192), rawTitle, upstream.url);
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.setHeader('X-Wiki-Canonical-Title', encodeURIComponent(canonical));
-      res.setHeader('X-Wiki-Trimmed', '0');
-      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=86400, stale-while-revalidate=604800');
-      res.setHeader('CDN-Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');
-      res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');
-      return res.status(200).end(fullHtml);
+      return new Response(fullHtml, {
+        status: 200,
+        headers: buildSuccessHeaders(canonical, '0')
+      });
     }
 
+    // Read only the tiny leading <head> bytes (~1-4 KB) so we can resolve the canonical
+    // redirect title into X-Wiki-Canonical-Title before returning the streaming Response.
     const decoder = new TextDecoder('utf-8');
-    let headersSent = false;
     let headBuf = '';
-    let scanBuf = '';
-    let depth = 0;
-    let currentSection = '';
-    let fallbackRawBuf = '';
-    let sectionIndex = 0;
-    let stoppedEarly = false;
-    let inBody = false;
+    let initialScanBuf = '';
+    let canonical = rawTitle;
+    let reachedBody = false;
 
-    const sendHeadersOnce = (canonical) => {
-      if (headersSent) return;
-      headersSent = true;
-      res.status(200);
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.setHeader('X-Wiki-Canonical-Title', encodeURIComponent(canonical));
-      res.setHeader('X-Wiki-Trimmed', '1');
-      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=86400, stale-while-revalidate=604800');
-      res.setHeader('CDN-Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');
-      res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');
-      if (typeof res.flushHeaders === 'function') res.flushHeaders();
-    };
-
-    const writeChunk = (chunk) => {
-      if (typeof res.write === 'function') res.write(chunk);
-    };
-
-    const processScanBuffer = (isFinal = false) => {
-      // Keep any potentially incomplete trailing tag (<section... or </section...) for next chunk
-      let limit = scanBuf.length;
-      if (!isFinal) {
-        const lastLt = scanBuf.lastIndexOf('<');
-        if (lastLt !== -1 && scanBuf.indexOf('>', lastLt) === -1) {
-          limit = lastLt;
-        }
-      }
-
-      const slice = scanBuf.slice(0, limit);
-      const remainder = scanBuf.slice(limit);
-
-      SECTION_TAG_RE.lastIndex = 0;
-      let cursor = 0;
-      let match;
-
-      while ((match = SECTION_TAG_RE.exec(slice)) !== null) {
-        const isClosing = match[1] === '/';
-        const tagStart = match.index;
-        const tagEnd = SECTION_TAG_RE.lastIndex;
-
-        if (!isClosing) {
-          if (depth === 0) {
-            fallbackRawBuf = '';
-            currentSection = slice.slice(tagStart, tagEnd);
-          } else {
-            currentSection += slice.slice(cursor, tagEnd);
-          }
-          depth += 1;
-        } else if (depth > 0) {
-          currentSection += slice.slice(cursor, tagEnd);
-          depth -= 1;
-
-          if (depth === 0) {
-            const action = classifySection(currentSection, sectionIndex);
-            if (action === 'abort') {
-              stoppedEarly = true;
-              currentSection = '';
-              scanBuf = '';
-              return;
-            }
-            if (action === 'keep') {
-              writeChunk(trimSectionMarkup(currentSection));
-            }
-            currentSection = '';
-            sectionIndex += 1;
-          }
-        }
-        cursor = tagEnd;
-      }
-
-      if (depth > 0 && cursor < slice.length) {
-        currentSection += slice.slice(cursor);
-      } else if (sectionIndex === 0 && depth === 0 && cursor < slice.length && fallbackRawBuf.length < 524288) {
-        fallbackRawBuf += slice.slice(cursor);
-      }
-
-      scanBuf = remainder;
-    };
-
-    while (!stoppedEarly) {
+    while (!reachedBody) {
       const { value, done } = await reader.read();
       if (done) {
         const tail = decoder.decode();
-        if (tail) {
-          if (!inBody) headBuf += tail;
-          else scanBuf += tail;
-        }
+        if (tail) headBuf += tail;
         break;
       }
 
-      const text = decoder.decode(value, { stream: true });
-      if (!inBody) {
-        headBuf += text;
-        const bodyIdx = headBuf.search(/<body\b[^>]*>/i);
-        if (bodyIdx !== -1) {
-          const bodyTagEnd = headBuf.indexOf('>', bodyIdx);
-          if (bodyTagEnd !== -1) {
-            const canonical = extractCanonicalTitle(headBuf.slice(0, bodyIdx), rawTitle, upstream.url);
-            sendHeadersOnce(canonical);
-            inBody = true;
-            scanBuf = headBuf.slice(bodyTagEnd + 1);
-            headBuf = '';
+      headBuf += decoder.decode(value, { stream: true });
+      const bodyIdx = headBuf.search(/<body\b[^>]*>/i);
+      if (bodyIdx !== -1) {
+        const bodyTagEnd = headBuf.indexOf('>', bodyIdx);
+        if (bodyTagEnd !== -1) {
+          canonical = extractCanonicalTitle(headBuf.slice(0, bodyIdx), rawTitle, upstream.url);
+          initialScanBuf = headBuf.slice(bodyTagEnd + 1);
+          headBuf = '';
+          reachedBody = true;
+        }
+      } else if (headBuf.length > 65536) {
+        // Unusual HTML without <body>: stream as-is
+        canonical = extractCanonicalTitle(headBuf, rawTitle, upstream.url);
+        initialScanBuf = headBuf;
+        headBuf = '';
+        reachedBody = true;
+      }
+    }
+
+    if (!reachedBody) {
+      cleanupUpstreamListeners();
+      if (!headBuf.trim()) {
+        return Response.json(
+          { error: 'Empty Wikipedia response' },
+          { status: 502, headers: { 'Cache-Control': 'no-store' } }
+        );
+      }
+      canonical = extractCanonicalTitle(headBuf, rawTitle, upstream.url);
+      return new Response(trimSectionMarkup(headBuf), {
+        status: 200,
+        headers: buildSuccessHeaders(canonical, '1')
+      });
+    }
+
+    const encoder = new TextEncoder();
+    let cancelled = false;
+
+    const stream = new ReadableStream({
+      async start(streamController) {
+        let scanBuf = initialScanBuf;
+        let depth = 0;
+        let currentSection = '';
+        let fallbackRawBuf = '';
+        let sectionIndex = 0;
+        let stoppedEarly = false;
+
+        const enqueueHtml = (html) => {
+          if (!cancelled && html) {
+            streamController.enqueue(encoder.encode(html));
+          }
+        };
+
+        const processScanBuffer = (isFinal = false) => {
+          // Keep any potentially incomplete trailing tag (<section... or </section...) for next chunk
+          let limit = scanBuf.length;
+          if (!isFinal) {
+            const lastLt = scanBuf.lastIndexOf('<');
+            if (lastLt !== -1 && scanBuf.indexOf('>', lastLt) === -1) {
+              limit = lastLt;
+            }
+          }
+
+          const slice = scanBuf.slice(0, limit);
+          const remainder = scanBuf.slice(limit);
+
+          SECTION_TAG_RE.lastIndex = 0;
+          let cursor = 0;
+          let match;
+
+          while ((match = SECTION_TAG_RE.exec(slice)) !== null) {
+            const isClosing = match[1] === '/';
+            const tagStart = match.index;
+            const tagEnd = SECTION_TAG_RE.lastIndex;
+
+            if (!isClosing) {
+              if (depth === 0) {
+                fallbackRawBuf = '';
+                currentSection = slice.slice(tagStart, tagEnd);
+              } else {
+                currentSection += slice.slice(cursor, tagEnd);
+              }
+              depth += 1;
+            } else if (depth > 0) {
+              currentSection += slice.slice(cursor, tagEnd);
+              depth -= 1;
+
+              if (depth === 0) {
+                const action = classifySection(currentSection, sectionIndex);
+                if (action === 'abort') {
+                  stoppedEarly = true;
+                  currentSection = '';
+                  scanBuf = '';
+                  return;
+                }
+                if (action === 'keep') {
+                  enqueueHtml(trimSectionMarkup(currentSection));
+                }
+                currentSection = '';
+                sectionIndex += 1;
+              }
+            }
+            cursor = tagEnd;
+          }
+
+          if (depth > 0 && cursor < slice.length) {
+            currentSection += slice.slice(cursor);
+          } else if (sectionIndex === 0 && depth === 0 && cursor < slice.length && fallbackRawBuf.length < 524288) {
+            fallbackRawBuf += slice.slice(cursor);
+          }
+
+          scanBuf = remainder;
+        };
+
+        try {
+          if (scanBuf) {
             processScanBuffer(false);
           }
-        } else if (headBuf.length > 65536) {
-          // Unusual HTML without <body>: flush as-is
-          const canonical = extractCanonicalTitle(headBuf, rawTitle, upstream.url);
-          sendHeadersOnce(canonical);
-          inBody = true;
-          scanBuf = headBuf;
-          headBuf = '';
-          processScanBuffer(false);
+
+          while (!stoppedEarly && !cancelled) {
+            const { value, done } = await reader.read();
+            if (done) {
+              const tail = decoder.decode();
+              if (tail) scanBuf += tail;
+              break;
+            }
+            scanBuf += decoder.decode(value, { stream: true });
+            processScanBuffer(false);
+          }
+
+          if (stoppedEarly || cancelled) {
+            await reader.cancel().catch(() => {});
+          } else {
+            processScanBuffer(true);
+            if (currentSection) {
+              enqueueHtml(trimSectionMarkup(currentSection));
+            } else if (sectionIndex === 0 && fallbackRawBuf.trim()) {
+              // Fallback if page had no <section> wrapper
+              enqueueHtml(trimSectionMarkup(fallbackRawBuf));
+            }
+          }
+
+          if (!cancelled) {
+            streamController.close();
+          }
+        } catch (err) {
+          await reader.cancel().catch(() => {});
+          // Error the stream instead of closing cleanly so Edge CDN never caches a truncated 200 OK
+          if (!cancelled) {
+            streamController.error(err);
+          }
+        } finally {
+          cleanupUpstreamListeners();
         }
-      } else {
-        scanBuf += text;
-        processScanBuffer(false);
+      },
+      cancel() {
+        cancelled = true;
+        cleanupUpstreamListeners();
+        upstreamCtrl.abort(new DOMException('Downstream cancelled', 'AbortError'));
+        reader.cancel().catch(() => {});
       }
-    }
-
-    if (stoppedEarly) {
-      await reader.cancel().catch(() => {});
-    } else if (!inBody && headBuf) {
-      const canonical = extractCanonicalTitle(headBuf, rawTitle, upstream.url);
-      sendHeadersOnce(canonical);
-      writeChunk(trimSectionMarkup(headBuf));
-    } else {
-      processScanBuffer(true);
-      if (currentSection) {
-        writeChunk(trimSectionMarkup(currentSection));
-      } else if (sectionIndex === 0 && fallbackRawBuf.trim()) {
-        // Fallback if page had no <section> wrapper
-        writeChunk(trimSectionMarkup(fallbackRawBuf));
-      }
-    }
-
-    clearTimeout(timer);
-    if (!headersSent) {
-      res.setHeader('Cache-Control', 'no-store');
-      return res.status(502).json({ error: 'Empty Wikipedia response' });
-    }
-    return res.end();
-  } catch (err) {
-    clearTimeout(timer);
-    if (res.headersSent) {
-      // Abort incomplete stream instead of clean end() so Edge CDN never caches a truncated 200 OK
-      if (typeof res.destroy === 'function') res.destroy(err);
-      else res.end();
-      return;
-    }
-    res.setHeader('Cache-Control', 'no-store');
-    const isAbort = err?.name === 'AbortError';
-    return res.status(isAbort ? 504 : 502).json({
-      error: isAbort ? 'Wikipedia proxy timed out' : 'Wikipedia proxy error',
-      details: err?.message
     });
+
+    return new Response(stream, {
+      status: 200,
+      headers: buildSuccessHeaders(canonical, '1')
+    });
+  } catch (err) {
+    cleanupUpstreamListeners();
+    const isTimeout = timedOut || err?.name === 'TimeoutError' || err?.name === 'AbortError';
+    return Response.json(
+      {
+        error: isTimeout ? 'Wikipedia proxy timed out' : 'Wikipedia proxy error',
+        details: err?.message
+      },
+      { status: isTimeout ? 504 : 502, headers: { 'Cache-Control': 'no-store' } }
+    );
   }
 }
