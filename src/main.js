@@ -1,3 +1,4 @@
+import { inject as injectVercelAnalytics } from '@vercel/analytics';
 import './styles/tokens.css';
 import './styles/main.css';
 import './styles/wiki-reader.css';
@@ -330,17 +331,21 @@ function setActiveTab(tab, { skipConfirm = false } = {}) {
   });
 
   if (tab === 'daily') {
+    document.title = 'Tangent — Daily Wikipedia Link-Racing Puzzle Game';
     showView('viewHome');
     renderHome();
   } else if (tab === 'packs') {
+    document.title = 'Curated Packs — Tangent';
     showView('viewHome');
     renderHome();
     requestAnimationFrame(() => {
       $('tierSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   } else if (tab === 'custom') {
+    document.title = 'Custom Challenge — Tangent';
     showView('viewCustom');
   } else if (tab === 'room') {
+    document.title = '10-Player Live Room — Tangent';
     showView('viewRoom');
     renderRoomView();
   }
@@ -1279,6 +1284,7 @@ function startSoloGame({
 
   syncRailLayoutClasses();
   renderTrail();
+  document.title = `${start} → ${target} — Tangent`;
   showView('viewGame');
 
   if (!roomCode) {
@@ -2134,6 +2140,7 @@ function escapeHtml(str) {
 
 // ==================== Event Wiring & Init ====================
 function initApp() {
+  injectVercelAnalytics({ mode: 'auto' });
   initThemeSync();
   installDialogLightDismissFallback();
   renderThemeButton();

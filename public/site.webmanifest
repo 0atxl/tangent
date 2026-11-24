@@ -1,0 +1,27 @@
+{
+  "name": "Tangent — Wikipedia Link-Racing Puzzle Game",
+  "short_name": "Tangent",
+  "description": "Navigate from one Wikipedia article to another in the fewest clicks. Daily puzzles, 4 difficulty tiers, 15 languages, and 10-player live race rooms.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF9F6",
+  "theme_color": "#111214",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
