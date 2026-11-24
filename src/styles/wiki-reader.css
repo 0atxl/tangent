@@ -1,6 +1,6 @@
 /* Native-Themed Editorial Wikipedia Reader
  * Automatically adapts Wikipedia HTML, infoboxes, tables, figures,
- * and math formulas to Tangent's Light, Dark, and OLED True Black themes.
+ * image strips, and math formulas to Tangent's Light, Dark, and OLED themes.
  */
 
 .wiki-article {
@@ -9,6 +9,12 @@
   line-height: 1.72;
   color: var(--ink);
   word-wrap: break-word;
+}
+
+/* Defer layout & paint ONLY for strictly below-the-fold sections (Section 1+) */
+.wiki-article > section.wiki-section-deferred {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 420px;
 }
 
 .wiki-article-header {
@@ -86,6 +92,34 @@
   margin-bottom: 0.35em;
 }
 
+/* Wikipedia horizontal lists (used inside infoboxes, sidebars, and templates) */
+.wiki-article .hlist ul,
+.wiki-article ul.hlist,
+.aside-wiki-content .hlist ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-width: none;
+}
+
+.wiki-article .hlist li,
+.aside-wiki-content .hlist li {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+
+.wiki-article .hlist li:not(:last-child)::after,
+.aside-wiki-content .hlist li:not(:last-child)::after {
+  content: '·';
+  margin-left: 6px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
 .wiki-article blockquote {
   margin: 1.2em 0;
   padding: 10px 18px;
@@ -118,6 +152,18 @@
   text-decoration: line-through dashed 1.5px;
   cursor: not-allowed;
   opacity: 0.78;
+}
+
+/* Crisp inline icons & country flags (never inflated to full column width) */
+.wiki-article img.wiki-inline-icon {
+  display: inline-block;
+  width: auto;
+  height: auto;
+  max-width: 26px;
+  max-height: 20px;
+  vertical-align: -2px;
+  margin: 0 4px 0 0;
+  border-radius: 2px;
 }
 
 /* Infobox & Series Cards inside the Right Collapsible Rail */
@@ -197,57 +243,193 @@
   text-align: center;
 }
 
-.wiki-article table.infobox img,
-.wiki-article table.sidebar img {
+.wiki-article table.infobox img:not(.wiki-inline-icon),
+.wiki-article table.sidebar img:not(.wiki-inline-icon) {
   border-radius: 8px;
-  max-height: 230px;
+  max-height: 210px;
+  max-width: 100%;
   width: auto;
   object-fit: contain;
   margin: 4px auto;
   display: block;
 }
 
-/* Figures, Thumbnails & Images */
+/* Standalone Figures & Thumbnails (height-capped so portraits never eat the column) */
 .wiki-article figure,
 .wiki-article .thumb {
-  margin: 14px 0 18px 20px;
+  margin: 12px 0 16px 20px;
   float: right;
   clear: right;
-  max-width: min(280px, 100%);
+  max-width: min(250px, 100%);
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: 8px;
   font-family: var(--font-sans);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--muted);
-  line-height: 1.4;
+  line-height: 1.38;
 }
 
 .wiki-article figure.mw-halign-left,
 .wiki-article .tleft {
   float: left;
   clear: left;
-  margin: 14px 20px 18px 0;
+  margin: 12px 20px 16px 0;
 }
 
-.wiki-article figure img,
-.wiki-article .thumb img {
-  border-radius: 8px;
+.wiki-article figure img:not(.wiki-inline-icon),
+.wiki-article .thumb img:not(.wiki-inline-icon) {
+  border-radius: 7px;
   display: block;
   width: 100%;
   height: auto;
+  max-height: 190px;
+  object-fit: contain;
+  background: var(--surface);
 }
 
 .wiki-article figcaption,
 .wiki-article .thumbcaption {
-  padding: 7px 4px 2px;
+  padding: 6px 2px 2px;
+}
+
+/* ==================== Compact Horizontal Scrollable Image Strips ====================
+ * Handles ul.gallery, div.thumb.tmulti ({{Multiple image}}), and runs of 2+ consecutive <figure>s.
+ * Uses overscroll-behavior-x: contain (NOT shorthand) so vertical page scrolling stays smooth.
+ */
+.wiki-article ul.gallery,
+.wiki-article .wiki-figure-strip,
+.wiki-article .tmulti.wiki-tmulti-strip .trow {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+  touch-action: manipulation;
+  list-style: none;
+  padding: 8px 6px 10px;
+  margin: 14px 0 18px;
+  max-width: none;
+  clear: both;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .wiki-article ul.gallery,
+  .wiki-article .wiki-figure-strip,
+  .wiki-article .tmulti.wiki-tmulti-strip .trow {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Unfloat tmulti container so multi-image templates sit cleanly inline as a compact horizontal row */
+.wiki-article .thumb.tmulti.wiki-tmulti-strip {
+  float: none;
+  clear: both;
+  max-width: 100%;
+  margin: 14px 0 18px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.wiki-article .tmulti.wiki-tmulti-strip .thumbinner {
+  width: 100% !important;
+  background: transparent;
+}
+
+.wiki-article .tmulti.wiki-tmulti-strip .trow {
+  margin: 0;
+}
+
+.wiki-article .tmulti.wiki-tmulti-strip .theader,
+.wiki-article .tmulti.wiki-tmulti-strip .tfooter,
+.wiki-article ul.gallery .gallerycaption {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 4px 6px 6px;
+}
+
+.wiki-article ul.gallery li.gallerycaption {
+  flex: 0 0 auto;
+  align-self: center;
+  max-width: 140px;
+  padding: 6px 8px;
+}
+
+.wiki-article li.gallerybox,
+.wiki-article .wiki-figure-strip > figure,
+.wiki-article .tmulti.wiki-tmulti-strip .tsingle {
+  flex: 0 0 158px;
+  max-width: 158px;
+  float: none;
+  clear: none;
+  margin: 0;
+  padding: 7px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.wiki-article li.gallerybox .thumb,
+.wiki-article .tmulti.wiki-tmulti-strip .thumbimage {
+  float: none;
+  clear: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  max-width: 100%;
+  background: transparent;
+}
+
+.wiki-article li.gallerybox img:not(.wiki-inline-icon),
+.wiki-article .wiki-figure-strip > figure img:not(.wiki-inline-icon),
+.wiki-article .tmulti.wiki-tmulti-strip .tsingle img:not(.wiki-inline-icon) {
+  width: 100%;
+  height: 102px;
+  max-height: 102px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin: 0;
+  display: block;
+  background: var(--surface-2);
+}
+
+.wiki-article li.gallerybox .gallerytext,
+.wiki-article .wiki-figure-strip > figure figcaption,
+.wiki-article .tmulti.wiki-tmulti-strip .tsingle .thumbcaption {
+  padding: 0 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wiki-article li.gallerybox .gallerytext p {
+  margin: 0;
 }
 
 /* Tables */
 .wiki-table-scroll {
   width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   margin: 18px 0;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -276,30 +458,30 @@
   background: transparent !important;
 }
 
-/* Gallery */
-.wiki-article ul.gallery {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
-  list-style: none;
-  padding: 0;
-  max-width: none;
+.wiki-article table.wikitable img:not(.wiki-inline-icon) {
+  max-width: 96px;
+  max-height: 68px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 5px;
+  display: block;
 }
 
-.wiki-article li.gallerybox {
+/* Streaming tail indicator shown briefly while remaining sections append below the fold */
+.wiki-stream-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 8px;
   font-family: var(--font-sans);
   font-size: 0.78rem;
+  font-weight: 600;
   color: var(--muted);
-}
-
-.wiki-article li.gallerybox img {
-  border-radius: 6px;
-  margin: 0 auto 6px;
-  display: block;
 }
 
 /* Dark & OLED safety for dark-ink math formulas & transparent SVGs */
@@ -333,5 +515,12 @@
     width: 100%;
     max-width: 100%;
     margin: 14px 0 18px;
+  }
+
+  .wiki-article .wiki-figure-strip > figure {
+    width: 148px;
+    flex: 0 0 148px;
+    max-width: 148px;
+    margin: 0;
   }
 }
