@@ -63,12 +63,15 @@ function hashDate(dateStr) {
   return h >>> 0;
 }
 
-async function hasEnoughBacklinks(title, minCount = 25) {
+async function hasEnoughBacklinks(title, minCount = 25, timeoutMs = 4000) {
   try {
     const url = `https://en.wikipedia.org/w/api.php?action=query&list=backlinks&bltitle=${encodeURIComponent(
       title
     )}&bllimit=${minCount}&blnamespace=0&blfilterredir=nonredirects&format=json&formatversion=2`;
-    const res = await fetch(url, { headers: { 'User-Agent': UA, 'Api-User-Agent': UA } });
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { 'User-Agent': UA, 'Api-User-Agent': UA }
+    });
     if (!res.ok) return true; // Fail open on transient network hiccup
     const data = await res.json();
     const list = data?.query?.backlinks || [];
@@ -164,13 +167,16 @@ export default async function handler(req, res) {
 
     let chosenTarget = null;
     const n = targetPool.length;
+    const loopDeadline = Date.now() + 7000;
     for (let offset = 0; offset < Math.min(n, 14); offset++) {
+      const remaining = loopDeadline - Date.now();
+      if (remaining <= 400) break;
       const candidate = targetPool[(seed + offset) % n];
       if (!candidate || normTitle(candidate) === normTitle(start)) continue;
       // 1-click guard: never pick a target already linked on the start article
       if (startLinks && startLinks.has(normTitle(candidate))) continue;
       // Reachability guard: ensure target has enough incoming links
-      const reachable = await hasEnoughBacklinks(candidate, 25);
+      const reachable = await hasEnoughBacklinks(candidate, 25, Math.min(3500, remaining));
       if (reachable) {
         chosenTarget = candidate;
         break;

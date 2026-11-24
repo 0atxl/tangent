@@ -24,7 +24,10 @@ export async function resolveCanonical(title, lang = 'en') {
   const url = `https://${safeLang}.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(
     title
   )}&redirects=1&format=json&formatversion=2`;
-  const res = await fetch(url, { headers: { 'Api-User-Agent': UA, 'User-Agent': UA } });
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(4000),
+    headers: { 'Api-User-Agent': UA, 'User-Agent': UA }
+  });
   if (!res.ok) return null;
   const data = await res.json();
   const page = data?.query?.pages?.[0];
@@ -42,7 +45,10 @@ export async function getOutgoingLinks(title, lang = 'en') {
   const url = `https://${safeLang}.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(
     title
   )}&prop=links&redirects=1&format=json&formatversion=2`;
-  const res = await fetch(url, { headers: { 'Api-User-Agent': UA, 'User-Agent': UA } });
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(4500),
+    headers: { 'Api-User-Agent': UA, 'User-Agent': UA }
+  });
   if (!res.ok) return null;
   const data = await res.json();
   const links = data?.parse?.links;
