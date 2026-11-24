@@ -1,4 +1,4 @@
-import { PACKS, DAILY_POOL } from '../src/data/packs.js';
+import { PACKS, DAILY_POOL, POOL_BUCKETS } from '../src/data/packs.js';
 
 const UA = 'TangentWikiGame/1.0 (https://playtangent.vercel.app; pack-verifier)';
 
@@ -34,6 +34,17 @@ async function main() {
       if (!seen.has(k)) {
         seen.add(k);
         checks.push({ title, lang: 'en' });
+      }
+    }
+  }
+  for (const bucket of Object.values(POOL_BUCKETS || {})) {
+    for (const tier of ['iconic', 'deep']) {
+      for (const title of bucket[tier] || []) {
+        const k = `en:${title}`;
+        if (!seen.has(k)) {
+          seen.add(k);
+          checks.push({ title, lang: 'en' });
+        }
       }
     }
   }

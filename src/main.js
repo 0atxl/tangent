@@ -10,7 +10,9 @@ import {
   generateTieredChallenge,
   getDailyForDate,
   getRecentDays,
-  makePairKey
+  makePairKey,
+  setLiveDailyOverride,
+  setLiveTrendingPool
 } from './data/packs.js';
 import {
   clearActiveGame,
@@ -62,6 +64,7 @@ import {
 import {
   createRoom,
   fetchGlobalRecord,
+  fetchLiveDaily,
   getRoomState,
   joinRoom,
   startRoom,
@@ -97,6 +100,8 @@ const app = {
   navSeq: 0,
   navAbort: null,
   navLoading: false,
+  launchingDaily: false,
+  liveDailyFetches: new Map(),
   lastPersistAt: 0,
   room: null,
   roomPollInterval: null,
@@ -281,27 +286,70 @@ function renderHomeResumeBanner() {
   });
 }
 
-function launchDailyByDate(dateStr = formatUtcDate()) {
-  const d = getDailyForDate(dateStr);
-  const tMeta = DIFFICULTY_TIERS[d.tier] || DIFFICULTY_TIERS.medium;
-  const startFresh = () =>
-    startSoloGame({
-      start: d.start,
-      target: d.target,
-      lang: d.lang,
-      par: d.par,
-      tier: d.tier,
-      titleLabel: `Daily #${d.dayNum}`,
-      dailyDate: d.date,
-      ...tMeta.rules
+function fetchAndCacheLiveDaily(dateStr) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return Promise.resolve(null);
+  if (app.liveDailyFetches.has(dateStr)) return app.liveDailyFetches.get(dateStr);
+  const req = fetchLiveDaily(dateStr)
+    .then((live) => {
+      if (!live || live.fallback) {
+        app.liveDailyFetches.delete(dateStr);
+        return null;
+      }
+      if (dateStr === formatUtcDate() && Array.isArray(live.trending) && live.trending.length) {
+        setLiveTrendingPool(live.trending);
+      }
+      if (live.start && live.target) {
+        setLiveDailyOverride(live.date || dateStr, live);
+        return live;
+      }
+      app.liveDailyFetches.delete(dateStr);
+      return null;
+    })
+    .catch(() => {
+      app.liveDailyFetches.delete(dateStr);
+      return null;
     });
+  app.liveDailyFetches.set(dateStr, req);
+  return req;
+}
+
+async function ensureLiveDaily(dateStr, timeoutMs = 1500) {
+  const req = fetchAndCacheLiveDaily(dateStr);
+  if (!timeoutMs) return req;
+  return Promise.race([req, new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs))]);
+}
+
+async function launchDailyByDate(dateStr = formatUtcDate()) {
+  if (app.launchingDaily) return;
+
+  const startFresh = async () => {
+    if (app.launchingDaily) return;
+    app.launchingDaily = true;
+    try {
+      await ensureLiveDaily(dateStr, 1500);
+      const d = getDailyForDate(dateStr);
+      const tMeta = DIFFICULTY_TIERS[d.tier] || DIFFICULTY_TIERS.medium;
+      startSoloGame({
+        start: d.start,
+        target: d.target,
+        lang: d.lang,
+        par: d.par,
+        tier: d.tier,
+        titleLabel: `Daily #${d.dayNum}`,
+        dailyDate: d.date,
+        ...tMeta.rules
+      });
+    } finally {
+      app.launchingDaily = false;
+    }
+  };
 
   const saved = getActiveGame();
-  if (saved && saved.dailyDate === d.date) {
+  if (saved && saved.dailyDate === dateStr) {
     openResumePrompt(saved, { onDiscard: startFresh });
     return;
   }
-  startFresh();
+  await startFresh();
 }
 
 function renderHome() {
@@ -358,8 +406,10 @@ function renderHome() {
         const res = dailyHist[d.date];
         const cls = ['day-tile', d.isToday ? 'today' : '', res ? 'solved' : ''].filter(Boolean).join(' ');
         const iconContent = res ? `${res.score}` : '→';
+        const pairStart = res?.path?.length >= 2 ? res.path[0] : d.start;
+        const pairTarget = res?.path?.length >= 2 ? res.path[res.path.length - 1] : d.target;
         return `
-          <button type="button" class="${cls}" data-daily-date="${d.date}" title="Tangent #${d.dayNum}: ${escapeHtml(d.start)} → ${escapeHtml(d.target)}">
+          <button type="button" class="${cls}" data-daily-date="${d.date}" title="Tangent #${d.dayNum}: ${escapeHtml(pairStart)} → ${escapeHtml(pairTarget)}">
             <span class="day-tile-icon tabular">${iconContent}</span>
             <span class="day-tile-label">${d.label}</span>
           </button>
@@ -452,10 +502,12 @@ function openArchiveModal() {
   grid.innerHTML = days
     .map((d) => {
       const r = hist[d.date];
+      const pairStart = r?.path?.length >= 2 ? r.path[0] : d.start;
+      const pairTarget = r?.path?.length >= 2 ? r.path[r.path.length - 1] : d.target;
       return `
         <button type="button" class="archive-item ${r ? 'solved' : ''}" data-arch-date="${d.date}">
           <small>#${d.dayNum} · ${d.date}</small>
-          <strong>${escapeHtml(d.start)} → ${escapeHtml(d.target)}</strong>
+          <strong>${escapeHtml(pairStart)} → ${escapeHtml(pairTarget)}</strong>
           <small style="margin-top:5px;color:${r ? 'var(--pop-mint)' : 'var(--muted)'};font-weight:700;">
             ${r ? `Solved · ${r.score} clicks` : `Par ${d.par} · ${(d.tier || 'medium').toUpperCase()}`}
           </small>
@@ -1934,6 +1986,15 @@ function initApp() {
   renderVipAndContrast();
   startUtcCountdown();
 
+  // Hydrate today's live Wikimedia Featured Daily & trending pool in the background
+  const todayUtc = formatUtcDate();
+  fetchAndCacheLiveDaily(todayUtc).then((live) => {
+    if (!live) return;
+    prefetchWikiArticle(live.start, live.lang || 'en');
+    if (!$('viewHome').classList.contains('hide')) {
+      renderHome();
+    }
+  });
 
   window.addEventListener('tangent:themechange', renderThemeButton);
 

@@ -25,6 +25,7 @@ function localApiPlugin() {
           if (pathname === '/api/record') relPath = 'api/record.js';
           else if (pathname === '/api/submit') relPath = 'api/submit.js';
           else if (pathname === '/api/wiki') relPath = 'api/wiki.js';
+          else if (pathname === '/api/daily') relPath = 'api/daily.js';
           else if (pathname === '/api/room/create') relPath = 'api/room/create.js';
           else if (pathname === '/api/room/join') relPath = 'api/room/join.js';
           else if (pathname === '/api/room/start') relPath = 'api/room/start.js';

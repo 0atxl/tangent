@@ -15,6 +15,15 @@ async function request(url, options = {}) {
   return data;
 }
 
+export async function fetchLiveDaily(dateStr = '') {
+  try {
+    const q = dateStr ? `?date=${encodeURIComponent(dateStr)}` : '';
+    return await request(`/api/daily${q}`);
+  } catch {
+    return { fallback: true };
+  }
+}
+
 export async function fetchGlobalRecord(pairKey) {
   try {
     return await request(`/api/record?pairKey=${encodeURIComponent(pairKey)}`);

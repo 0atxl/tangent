@@ -1,6 +1,7 @@
 // Curated packs, 4 Difficulty Tiers (Easy, Medium, Hardcore, Boss Mode),
-// cross-domain challenge generator, and fixed Daily Tangent schedule.
-// Every Wikipedia title is verified via `npm run verify-packs`.
+// 456-title verified hybrid challenge generator, and live Wikimedia Daily Feed support.
+// Every Wikipedia title is verified against the Wikimedia API.
+import enPool from './pools/en-pool.json' with { type: 'json' };
 
 export const BANNED_HUBS = new Set([
   'united states',
@@ -92,21 +93,65 @@ export const TOPIC_BUCKETS = {
   myth_world: ['Zeus', 'Odin', 'Ramayana', 'Thor', 'Atlantis', 'Vampire', 'Medusa', 'Anubis', 'Mount Everest', 'Antarctica']
 };
 
+// 456 verified English Wikipedia titles across 12 semantic buckets (iconic + deep tiers)
+export const POOL_BUCKETS = enPool.buckets || {};
+
+const DISTANT_BUCKET_PAIRS = [
+  ['history', 'games_anime'],
+  ['history', 'science_tech'],
+  ['food_drink', 'space_nature'],
+  ['food_drink', 'science_tech'],
+  ['india_asia', 'film_tv_pop'],
+  ['india_asia', 'space_nature'],
+  ['india_asia', 'games_anime'],
+  ['sports', 'literature_myth'],
+  ['sports', 'science_tech'],
+  ['music_art', 'space_nature'],
+  ['everyday_inventions', 'literature_myth'],
+  ['landmarks_places', 'games_anime'],
+  ['film_tv_pop', 'everyday_inventions'],
+  ['food_drink', 'literature_myth']
+];
+
+let liveTrendingTitles = [];
+const liveDailyOverrides = new Map(); // YYYY-MM-DD -> { start, target, par, tier, source }
+const recentGeneratedPairs = []; // ring buffer (max 24) to avoid back-to-back repeats
+
+export function setLiveTrendingPool(titles = []) {
+  if (!Array.isArray(titles)) return;
+  liveTrendingTitles = titles.filter((t) => typeof t === 'string' && t.trim().length >= 3);
+}
+
+export function setLiveDailyOverride(dateStr, data) {
+  if (!dateStr || !data?.start || !data?.target) return;
+  liveDailyOverrides.set(dateStr, {
+    start: data.start,
+    target: data.target,
+    par: data.par || 4,
+    tier: data.tier || 'medium',
+    source: data.source || 'wikimedia-featured'
+  });
+}
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 /**
- * Generates a cross-domain challenge tailored to the selected difficulty tier.
- * Guarantees Start and Target come from different semantic domains.
+ * Generates a cross-domain challenge tailored to the selected difficulty tier
+ * from the 456-title verified pool (+ live Wikimedia trending topics for Easy/Medium).
+ * Guarantees Start and Target come from completely different semantic domains.
  */
 export function generateTieredChallenge(tierId = 'medium') {
   const tier = DIFFICULTY_TIERS[tierId] || DIFFICULTY_TIERS.medium;
+  const bucketKeys = Object.keys(POOL_BUCKETS);
 
-  // First check curated pairs matching this tier across English packs
+  // Small chance (18%) of picking a hand-crafted pack pair matching this tier
   const curatedPool = PACKS.filter((p) => p.lang === 'en').flatMap((p) =>
     p.pairs.filter((pair) => (pair[3] || 'medium') === tier.id)
   );
-
-  // 60% curated tier pair, 40% fresh cross-bucket procedural combination
-  if (curatedPool.length > 0 && Math.random() < 0.6) {
-    const [start, target, par] = curatedPool[Math.floor(Math.random() * curatedPool.length)];
+  if (curatedPool.length > 0 && Math.random() < 0.18) {
+    const [start, target, par] = pickRandom(curatedPool);
     return {
       start,
       target,
@@ -117,36 +162,67 @@ export function generateTieredChallenge(tierId = 'medium') {
     };
   }
 
-  // Procedural cross-bucket generator (never pairs two topics from the same bucket!)
-  const bucketKeys = Object.keys(TOPIC_BUCKETS);
-  let b1 = bucketKeys[Math.floor(Math.random() * bucketKeys.length)];
-  let b2 = bucketKeys[Math.floor(Math.random() * bucketKeys.length)];
-  while (b2 === b1) {
-    b2 = bucketKeys[Math.floor(Math.random() * bucketKeys.length)];
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let b1;
+    let b2;
+    if (tier.id === 'hardcore' || tier.id === 'boss') {
+      const pair = pickRandom(DISTANT_BUCKET_PAIRS);
+      [b1, b2] = Math.random() < 0.5 ? pair : [pair[1], pair[0]];
+    } else {
+      b1 = pickRandom(bucketKeys);
+      b2 = pickRandom(bucketKeys);
+      while (b2 === b1) b2 = pickRandom(bucketKeys);
+    }
+
+    const bucket1 = POOL_BUCKETS[b1];
+    const bucket2 = POOL_BUCKETS[b2];
+    if (!bucket1 || !bucket2) continue;
+
+    let start;
+    let target;
+
+    if (tier.id === 'easy') {
+      // Easy: iconic -> iconic (with 25% sprinkle of today's live trending Wikipedia topics)
+      const useTrending = liveTrendingTitles.length >= 4 && Math.random() < 0.25;
+      start = useTrending ? pickRandom(liveTrendingTitles) : pickRandom(bucket1.iconic);
+      target = pickRandom(bucket2.iconic);
+    } else if (tier.id === 'medium') {
+      // Medium: iconic <-> (iconic or deep), with occasional live trending topic
+      const useTrending = liveTrendingTitles.length >= 4 && Math.random() < 0.2;
+      start = useTrending ? pickRandom(liveTrendingTitles) : pickRandom(bucket1.iconic);
+      target = Math.random() < 0.45 ? pickRandom(bucket2.deep) : pickRandom(bucket2.iconic);
+    } else if (tier.id === 'hardcore') {
+      // Hardcore: iconic <-> deep across distant domains
+      const flip = Math.random() < 0.5;
+      start = flip ? pickRandom(bucket1.deep) : pickRandom(bucket1.iconic);
+      target = flip ? pickRandom(bucket2.iconic) : pickRandom(bucket2.deep);
+    } else {
+      // Boss Mode: deep -> deep across distant domains
+      start = pickRandom(bucket1.deep);
+      target = pickRandom(bucket2.deep);
+    }
+
+    if (!start || !target || start.toLowerCase() === target.toLowerCase()) continue;
+    const sig = `${start.toLowerCase()}|${target.toLowerCase()}`;
+    if (recentGeneratedPairs.includes(sig) && attempt < 10) continue;
+
+    recentGeneratedPairs.push(sig);
+    if (recentGeneratedPairs.length > 24) recentGeneratedPairs.shift();
+
+    return {
+      start,
+      target,
+      par: tier.par,
+      lang: 'en',
+      tier: tier.id,
+      rules: { ...tier.rules }
+    };
   }
 
-  // For Hardcore / Boss Mode, prefer distant buckets (e.g. food/india <-> scifi_pop/games_anime/science_space)
-  if (tier.id === 'hardcore' || tier.id === 'boss') {
-    const distantPairs = [
-      ['india', 'scifi_pop'],
-      ['food', 'science_space'],
-      ['history', 'games_anime'],
-      ['india', 'games_anime'],
-      ['food', 'myth_world'],
-      ['science_space', 'scifi_pop']
-    ];
-    const pick = distantPairs[Math.floor(Math.random() * distantPairs.length)];
-    [b1, b2] = Math.random() < 0.5 ? pick : [pick[1], pick[0]];
-  }
-
-  const list1 = TOPIC_BUCKETS[b1];
-  const list2 = TOPIC_BUCKETS[b2];
-  const start = list1[Math.floor(Math.random() * list1.length)];
-  const target = list2[Math.floor(Math.random() * list2.length)];
-
+  // Ultimate fallback
   return {
-    start,
-    target,
+    start: 'Genghis Khan',
+    target: 'C-3PO',
     par: tier.par,
     lang: 'en',
     tier: tier.id,
@@ -343,6 +419,20 @@ export function getDayNumberForDate(utcDateStr) {
 
 export function getDailyForDate(utcDateStr = formatUtcDate()) {
   const dayNum = getDayNumberForDate(utcDateStr);
+  const live = liveDailyOverrides.get(utcDateStr);
+  if (live) {
+    return {
+      date: utcDateStr,
+      dayNum: Math.max(1, dayNum),
+      start: live.start,
+      target: live.target,
+      par: live.par,
+      tier: live.tier,
+      lang: 'en',
+      source: live.source,
+      pairKey: makePairKey(live.start, live.target, 'en')
+    };
+  }
   const offset = dayNum - 142;
   const idx = ((offset % DAILY_POOL.length) + DAILY_POOL.length) % DAILY_POOL.length;
   const [start, target, par, tier = 'medium'] = DAILY_POOL[idx];
@@ -354,6 +444,7 @@ export function getDailyForDate(utcDateStr = formatUtcDate()) {
     par,
     tier,
     lang: 'en',
+    source: 'curated',
     pairKey: makePairKey(start, target, 'en')
   };
 }
