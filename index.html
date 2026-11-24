@@ -41,7 +41,7 @@
         <button type="button" class="brand" id="brandBtn" aria-label="Tangent Home">
           Tangent<span class="brand-dot">.</span>
         </button>
-        <span class="vip-badge hide" id="vipBadge" title="Founding $0.00 Member">VIP · $0</span>
+        <button type="button" class="vip-badge hide" id="vipBadge" title="Founding $0.00 Member">VIP · $0</button>
       </div>
 
       <nav class="nav-tabs" aria-label="Main navigation">
@@ -454,14 +454,18 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <!-- Native <dialog> Modals -->
-  <dialog id="pauseDialog" closedby="none" aria-labelledby="pauseTitle">
+  <dialog id="pauseDialog" aria-labelledby="pauseTitle">
     <div class="dialog-inner">
       <div class="dialog-head" style="justify-content:center;text-align:center;flex-direction:column;gap:4px;">
-        <h2 id="pauseTitle">Game Paused</h2>
-        <div class="section-sub tabular" id="pauseSubtitle">Timer frozen</div>
+        <h2 id="pauseTitle">Earn Your Pause</h2>
+        <div class="section-sub tabular" id="pauseSubtitle">Clock is still ticking…</div>
       </div>
       <div class="pg-stage" id="pauseStage"></div>
     </div>
+  </dialog>
+
+  <dialog id="confirmDialog" aria-labelledby="confirmTitle">
+    <div class="dialog-inner" id="confirmDialogBody"></div>
   </dialog>
 
   <dialog id="paywallDialog" closedby="any" aria-labelledby="paywallTitle">

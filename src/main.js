@@ -100,8 +100,11 @@ const app = {
   navSeq: 0,
   navAbort: null,
   navLoading: false,
+  pauseGateOpen: false,
+  closePauseGate: null,
   launchingDaily: false,
   liveDailyFetches: new Map(),
+  historyGuardActive: false,
   lastPersistAt: 0,
   room: null,
   roomPollInterval: null,
@@ -168,10 +171,95 @@ function renderSoundButton() {
 
 function renderVipAndContrast() {
   const prefs = getPrefs();
-  $('vipBadge').classList.toggle('hide', !prefs.vipPaidZero);
+  const isVip = Boolean(prefs.vipPaidZero);
+  $('vipBadge').classList.toggle('hide', !isVip);
+  $('proBtn')?.classList.toggle('hide', isVip);
+  $('footerProBtn')?.classList.toggle('hide', isVip);
   $('contrastToggleBtn').textContent = `High Contrast: ${prefs.highContrast ? 'On' : 'Off'}`;
   if (prefs.highContrast) document.documentElement.dataset.contrast = 'high';
   else delete document.documentElement.dataset.contrast;
+}
+
+// ==================== Confirmation Modal & Active Challenge Leave Guard ====================
+function isActiveChallengeRunning() {
+  const gameVisible = !$('viewGame')?.classList.contains('hide');
+  return Boolean(gameVisible && app.game && !app.game.finished);
+}
+
+function openConfirmDialog({
+  title,
+  message,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  destructive = false,
+  onConfirm = () => {},
+  onCancel = () => {}
+}) {
+  const dialog = $('confirmDialog');
+  const body = $('confirmDialogBody');
+  if (!dialog || !body) {
+    onConfirm();
+    return;
+  }
+  if (dialog.open) return;
+
+  body.innerHTML = `
+    <h2 id="confirmTitle" class="confirm-dialog-title">${escapeHtml(title)}</h2>
+    <p class="confirm-dialog-msg">${escapeHtml(message)}</p>
+    <form method="dialog" class="confirm-dialog-actions">
+      <button type="submit" class="btn" value="cancel" autofocus>${escapeHtml(cancelLabel)}</button>
+      <button type="submit" class="btn ${destructive ? 'btn-danger' : 'btn-primary'}" value="confirm">${escapeHtml(confirmLabel)}</button>
+    </form>
+  `;
+
+  dialog.addEventListener(
+    'close',
+    () => {
+      const choice = dialog.returnValue;
+      dialog.returnValue = '';
+      if (choice === 'confirm') {
+        playTap();
+        onConfirm();
+      } else {
+        playTap();
+        onCancel();
+      }
+    },
+    { once: true }
+  );
+
+  dialog.showModal();
+}
+
+function confirmLeaveChallenge(actionLabel, onConfirm) {
+  if (!isActiveChallengeRunning()) {
+    onConfirm();
+    return;
+  }
+  const g = app.game;
+  const msg = g.roomCode
+    ? `You are in Live Race Room ${g.roomCode} (${g.start} → ${g.target}). Leaving now will pull you out of the active race.`
+    : `Your run (${g.start} → ${g.target}) is automatically saved, so you can continue later from Home — or stay right here.`;
+
+  openConfirmDialog({
+    title: 'Leave current challenge?',
+    message: msg,
+    confirmLabel: actionLabel || 'Leave Challenge',
+    cancelLabel: 'Stay in Challenge',
+    destructive: Boolean(g.roomCode),
+    onConfirm
+  });
+}
+
+function pushGameHistoryGuard() {
+  try {
+    if (!history.state?.tangentGuard) {
+      history.pushState({ tangentGuard: true }, '', window.location.href);
+    }
+    app.historyGuardActive = true;
+  } catch {
+    // Ignore restricted history API contexts
+  }
 }
 
 // ==================== Navigation Views ====================
@@ -182,10 +270,16 @@ function showView(name) {
 
   if (name !== 'viewGame') {
     stopTimer();
+    app.closePauseGate?.();
+    app.closePauseGate = null;
+    app.pauseGateOpen = false;
+    const confirmDialog = $('confirmDialog');
+    if (confirmDialog?.open) confirmDialog.close();
     app.hovercard?.hide();
     app.navAbort?.abort();
     app.navAbort = null;
     app.navLoading = false;
+    app.historyGuardActive = false;
     cancelActivePrefetches();
   }
 
@@ -200,10 +294,34 @@ function suspendActiveGameToBackground() {
   persistActiveGame(false);
 }
 
-function setActiveTab(tab) {
+function setActiveTab(tab, { skipConfirm = false } = {}) {
+  if (!skipConfirm && isActiveChallengeRunning()) {
+    const label =
+      tab === 'daily'
+        ? 'Leave to Home'
+        : tab === 'packs'
+        ? 'Leave to Packs'
+        : tab === 'room'
+        ? 'Leave to Live Room'
+        : 'Leave to Custom';
+    confirmLeaveChallenge(label, () => setActiveTab(tab, { skipConfirm: true }));
+    return;
+  }
+
   if (!$('viewGame').classList.contains('hide')) {
-    suspendActiveGameToBackground();
-    clearChallengeUrl();
+    if (app.game?.roomCode && !app.game.finished) {
+      app.game.finished = true;
+      if (tab !== 'room') {
+        stopRoomPolling();
+        app.room = null;
+        if (window.location.pathname.startsWith('/room/')) {
+          history.replaceState({}, '', '/');
+        }
+      }
+    } else {
+      suspendActiveGameToBackground();
+      clearChallengeUrl();
+    }
   }
 
   app.activeTab = tab;
@@ -1148,9 +1266,10 @@ function startSoloGame({
       : `Hint (+1)`;
 
   $('pauseBtn').classList.toggle('hide', Boolean(roomCode));
+  $('pauseBtn').disabled = true;
   $('raceStrip').classList.toggle('hide', !roomCode);
   $('readerLayout').classList.remove('is-paused', 'is-loading-nav');
-  $('articleShell').classList.remove('is-loading');
+  $('articleShell').classList.remove('is-loading', 'is-paused');
   hideArticleStatusBar();
   $('wikiArticle').replaceChildren();
 
@@ -1166,6 +1285,7 @@ function startSoloGame({
     syncChallengeUrl(app.game);
     persistActiveGame(true);
   }
+  pushGameHistoryGuard();
 
   if (restoredState) {
     navigateToArticle(restoredState.currentArticle, { isResume: true });
@@ -1326,11 +1446,13 @@ async function navigateToArticle(
         hideArticleStatusBar();
 
         // Start (or resume) timer as soon as Section 0 (Lead + Infobox) is readable & playable
+        $('pauseBtn').disabled = false;
         if (!g.timerStarted) {
           g.timerStarted = true;
-          g.paused = false;
-          g.resumeAt = Date.now();
-          startTimer();
+          if (!g.paused) {
+            g.resumeAt = Date.now();
+            startTimer();
+          }
         }
 
         persistActiveGame(true);
@@ -1408,7 +1530,7 @@ async function navigateToArticle(
       });
       $('errorHomeBtn')?.addEventListener('click', () => {
         playTap();
-        setActiveTab('daily');
+        setActiveTab('daily', { skipConfirm: true });
       });
     }
   }
@@ -1425,8 +1547,14 @@ async function handleHint() {
   }
 
   if (g.hintLevel >= g.maxHints) {
+    if (getPrefs().vipPaidZero) {
+      playThud();
+      showToast(`You've used all ${g.maxHints} hint${g.maxHints === 1 ? '' : 's'} for this tier!`);
+      return;
+    }
     openJokePaywall({
-      triggerReason: `You've used your ${g.maxHints} allowed hint${g.maxHints === 1 ? '' : 's'} for this tier! Extra hints require Tangent+ Ultra…`
+      triggerReason: `You've used your ${g.maxHints} allowed hint${g.maxHints === 1 ? '' : 's'} for this tier! Extra hints require Tangent+ Ultra…`,
+      onVipUnlocked: renderVipAndContrast
     });
     return;
   }
@@ -1462,31 +1590,56 @@ async function handleHint() {
 
 function handleBack() {
   const g = app.game;
-  if (!g || g.finished || g.paused || app.navLoading || g.path.length < 2) return;
-  playBack();
+  if (!g || g.finished || g.paused || app.navLoading || app.pauseGateOpen || g.path.length < 2) return;
+  playTap();
   const current = g.path[g.path.length - 1];
   const prev = g.path[g.path.length - 2];
-  navigateToArticle(prev, { moveType: 'back', fromTitle: current });
+
+  openConfirmDialog({
+    title: `Go back to “${prev}”?`,
+    message: `Stepping back adds +${g.backCost} click${g.backCost === 1 ? '' : 's'} to your score.`,
+    confirmLabel: `Go Back (+${g.backCost})`,
+    cancelLabel: 'Stay Here',
+    onConfirm: () => {
+      if (app.game !== g || g.finished || g.paused || app.navLoading || g.path.length < 2) return;
+      playBack();
+      navigateToArticle(prev, { moveType: 'back', fromTitle: current });
+    }
+  });
 }
 
 function handlePause() {
   const g = app.game;
-  if (!g || g.finished || g.paused || g.roomCode) return;
+  if (!g || g.finished || g.paused || g.roomCode || app.pauseGateOpen || !g.timerStarted) return;
   playTap();
-  g.accumulatedMs = getElapsedMs();
-  g.paused = true;
-  persistActiveGame(true);
-  $('readerLayout').classList.add('is-paused');
+  app.pauseGateOpen = true;
   app.hovercard?.hide();
 
-  openPauseGate({
-    formatElapsed: () => formatTime(g.accumulatedMs),
+  // Clock KEEPS RUNNING until the player passes the pre-pause challenge!
+  app.closePauseGate = openPauseGate({
+    getElapsedText: () => formatTime(getElapsedMs()),
+    onPauseConfirmed: () => {
+      if (app.game !== g || g.finished) return formatTime(0);
+      g.accumulatedMs = getElapsedMs();
+      g.paused = true;
+      persistActiveGame(true);
+      $('readerLayout').classList.add('is-paused');
+      $('articleShell').classList.add('is-paused');
+      return formatTime(g.accumulatedMs);
+    },
     onResume: () => {
+      app.closePauseGate = null;
+      app.pauseGateOpen = false;
       if (app.game !== g) return;
       g.paused = false;
       g.resumeAt = Date.now();
       $('readerLayout').classList.remove('is-paused');
+      $('articleShell').classList.remove('is-paused');
       persistActiveGame(true);
+    },
+    onCancel: () => {
+      app.closePauseGate = null;
+      app.pauseGateOpen = false;
     }
   });
 }
@@ -1704,8 +1857,9 @@ async function handleWin() {
       .map((s, i) => {
         const title = s?.title || finalPath[i];
         const extract = (s?.extract || s?.description || 'Wikipedia article.').slice(0, 130);
-        const thumb = s?.thumbnail
-          ? `<img class="learn-thumb" src="${s.thumbnail}" alt="" loading="lazy">`
+        const safeThumb = s?.thumbnail && /^https?:\/\//i.test(s.thumbnail) ? s.thumbnail : null;
+        const thumb = safeThumb
+          ? `<img class="learn-thumb" src="${escapeHtml(safeThumb)}" alt="" loading="lazy">`
           : `<div class="learn-thumb" style="display:grid;place-items:center;font-weight:800;color:var(--muted);">${i + 1}</div>`;
         return `
           <div class="learn-card">
@@ -1974,7 +2128,8 @@ function escapeHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ==================== Event Wiring & Init ====================
@@ -2027,6 +2182,10 @@ function initApp() {
   const openPro = () => openJokePaywall({ onVipUnlocked: renderVipAndContrast });
   $('proBtn').addEventListener('click', openPro);
   $('footerProBtn').addEventListener('click', openPro);
+  $('vipBadge')?.addEventListener('click', () => {
+    playTap();
+    showToast('VIP · $0 Founding Member — everything is already unlocked!');
+  });
   $('footerArchiveBtn').addEventListener('click', openArchiveModal);
 
   $('contrastToggleBtn').addEventListener('click', () => {
@@ -2399,6 +2558,15 @@ function initApp() {
     prefetchWikiArticle(link.dataset.wikiTitle, app.game.lang || 'en', { highIntent: true });
   });
 
+  // Guard browser Back / trackpad swipe back during an active challenge
+  window.addEventListener('popstate', () => {
+    if (!isActiveChallengeRunning()) return;
+    // Immediately keep the user on the active challenge while asking for confirmation
+    pushGameHistoryGuard();
+    confirmLeaveChallenge('Leave to Home', () => {
+      setActiveTab('daily', { skipConfirm: true });
+    });
+  });
 
   // Mount sleek Wikipedia Hovercard on #readerLayout (covers both Center Prose and Right Infobox Rail)
   app.hovercard = createHovercard({

@@ -1,9 +1,19 @@
 /**
- * Tongue-in-cheek "Tangent+ Ultra ($0.00/forever)" joke paywall modal.
- * Zero actual payments — unlocks a permanent VIP (Paid $0) badge & chuckle.
+ * One-time tongue-in-cheek "Tangent+ Ultra ($0.00/forever)" joke paywall modal.
+ * Once claimed, unlocks the permanent VIP · $0 badge and hides the Tangent+ upsell
+ * so the joke lands once and never clutters the UI afterward.
  */
 import { getPrefs, updatePrefs } from './storage.js';
 import { playTap, playWin } from './sound.js';
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 export function launchBrandConfetti(count = 36) {
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
@@ -36,7 +46,7 @@ export function openJokePaywall({ triggerReason = '', onVipUnlocked = () => {} }
       </form>
     </div>
     <h2 id="paywallTitle" class="pw-title">Upgrade to <em>Tangent+ Ultra</em></h2>
-    ${triggerReason ? `<p class="pw-trigger">${triggerReason}</p>` : ''}
+    ${triggerReason ? `<p class="pw-trigger">${escapeHtml(triggerReason)}</p>` : ''}
     <div class="pw-price-box">
       <div class="pw-strike">$99.99/mo</div>
       <div class="pw-price">$0.00<span> / forever</span></div>
@@ -46,11 +56,11 @@ export function openJokePaywall({ triggerReason = '', onVipUnlocked = () => {} }
       <li><span class="pw-check">✓</span> Unlock all 26 letters of the alphabet in Wikipedia articles</li>
       <li><span class="pw-check">✓</span> 10-player Live Race Rooms (already free, we just wanted a bullet)</li>
       <li><span class="pw-check">✓</span> OLED True Black mode that is 0% blacker than free OLED mode</li>
-      <li><span class="pw-check">✓</span> Exclusive golden <strong>VIP · Paid $0</strong> badge in your header</li>
+      <li><span class="pw-check">✓</span> Exclusive golden <strong>VIP · $0</strong> badge — and this button disappears forever</li>
     </ul>
     <div class="pw-actions">
       <button type="button" class="btn btn-primary btn-lg" id="pwClaimBtn">
-        ${alreadyVip ? 'Renew My $0.00 Membership' : 'Pay $0.00 Now'}
+        ${alreadyVip ? 'Already a $0.00 Founding Member ✓' : 'Pay $0.00 Now'}
       </button>
       <button type="button" class="btn btn-ghost" id="pwCloseBtn">No thanks, I prefer paying $0 without the badge</button>
     </div>
@@ -61,6 +71,11 @@ export function openJokePaywall({ triggerReason = '', onVipUnlocked = () => {} }
   const closeBtn = body.querySelector('#pwCloseBtn');
   const status = body.querySelector('#pwStatus');
 
+  if (alreadyVip) {
+    claimBtn.disabled = true;
+    closeBtn.textContent = 'Close';
+  }
+
   claimBtn.addEventListener('click', () => {
     playWin();
     updatePrefs({ vipPaidZero: true });
@@ -68,7 +83,9 @@ export function openJokePaywall({ triggerReason = '', onVipUnlocked = () => {} }
     launchBrandConfetti(42);
     claimBtn.disabled = true;
     claimBtn.textContent = 'Payment of $0.00 Approved ✓';
-    status.textContent = 'Welcome, Founding Billionaire. Absolutely nothing changed — Tangent is 100% free forever.';
+    closeBtn.textContent = 'Back to Tangent';
+    status.textContent =
+      'Welcome, Founding Billionaire. Tangent is 100% free forever — and we retired the Tangent+ button for you!';
   });
 
   closeBtn.addEventListener('click', () => {
