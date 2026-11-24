@@ -40,9 +40,11 @@ import {
   toggleSound
 } from './lib/sound.js';
 import {
+  cancelActivePrefetches,
   fetchBacklinkHint,
   fetchWikiArticle,
   fetchWikiSummary,
+  getCachedWikiSummary,
   isAbortError,
   normTitle,
   prefetchWikiArticle,
@@ -179,6 +181,7 @@ function showView(name) {
     app.navAbort?.abort();
     app.navAbort = null;
     app.navLoading = false;
+    cancelActivePrefetches();
   }
 
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -630,34 +633,34 @@ function syncRailLayoutClasses() {
   $('asideChevron').textContent = app.asideCollapsed ? '‹' : '›';
 }
 
-function renderArticleToc(sections) {
+function renderArticleToc(sections, { streaming = false } = {}) {
   const list = $('tocList');
   if (!list) return;
+  list.replaceChildren();
   if (!sections || sections.length === 0) {
-    list.innerHTML = `<div style="padding:8px;font-size:0.78rem;color:var(--muted);">Intro only (no sub-sections)</div>`;
+    list.innerHTML = `<div class="toc-empty-note" style="padding:8px;font-size:0.78rem;color:var(--muted);">${
+      streaming ? 'Loading sections…' : 'Intro only (no sub-sections)'
+    }</div>`;
     return;
   }
+  appendArticleToc(sections);
+}
 
-  list.innerHTML = sections
-    .map(
-      (s) => `
-      <button type="button" class="toc-link level-${s.level}" data-sec-id="${s.id}">
-        <span class="toc-num">${s.number}</span>
-        <span>${escapeHtml(s.title)}</span>
-      </button>`
-    )
-    .join('');
+function appendArticleToc(sections) {
+  const list = $('tocList');
+  if (!list || !sections || sections.length === 0) return;
+  list.querySelector('.toc-empty-note')?.remove();
 
-  list.querySelectorAll('[data-sec-id]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      playTap();
-      const targetEl = document.getElementById(btn.dataset.secId);
-      if (targetEl) {
-        const y = targetEl.getBoundingClientRect().top + window.scrollY - 134;
-        window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
-      }
-    });
-  });
+  const frag = document.createDocumentFragment();
+  for (const s of sections) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `toc-link level-${s.level}`;
+    btn.dataset.secId = s.id;
+    btn.innerHTML = `<span class="toc-num">${escapeHtml(s.number)}</span><span>${escapeHtml(s.title)}</span>`;
+    frag.appendChild(btn);
+  }
+  list.appendChild(frag);
 }
 
 function renderArticleAside(asideNodes, lockInfobox) {
@@ -688,6 +691,17 @@ function renderArticleAside(asideNodes, lockInfobox) {
   }
 
   asideContent.append(...asideNodes);
+}
+
+function appendArticleAside(asideNodes, lockInfobox) {
+  if (!asideNodes || asideNodes.length === 0) return;
+  const asideContent = $('wikiAsideContent');
+  if (!asideContent) return;
+  if (asideContent.childNodes.length === 0) {
+    renderArticleAside(asideNodes, lockInfobox);
+  } else {
+    asideContent.append(...asideNodes);
+  }
 }
 
 // ==================== Challenge Persistence, URL Sync & Resume Prompt ====================
@@ -895,14 +909,15 @@ function hideArticleStatusBar() {
   bar.replaceChildren();
 }
 
-function showArticleLoadingBar(title) {
+function showArticleLoadingBar(title, subtitle = '') {
   const bar = $('articleStatusBar');
   if (!bar) return;
   bar.classList.remove('hide', 'is-error');
+  const desc = subtitle ? ` — ${escapeHtml(subtitle)}` : '';
   bar.innerHTML = `
     <div class="article-status-msg">
       <progress aria-label="Loading article" class="loading-spinner sm"></progress>
-      <span>Opening “${escapeHtml(title)}”…</span>
+      <span>Opening “${escapeHtml(title)}”${desc}…</span>
     </div>
   `;
 }
@@ -1154,22 +1169,22 @@ async function navigateToArticle(
   $('backBtn').disabled = true;
   app.hovercard?.hide();
 
+  const cachedSummary = getCachedWikiSummary(title, g.lang);
   if (!hasRenderedArticle) {
     hideArticleStatusBar();
     renderInitialArticleLoading(title);
   } else {
-    showArticleLoadingBar(title);
+    showArticleLoadingBar(title, cachedSummary?.description || '');
   }
 
-  try {
-    const parsed = await fetchWikiArticle(title, g.lang, {
-      banHubs: g.banHubs,
-      lockInfobox: g.lockInfobox,
-      signal: controller.signal
-    });
-    if (reqSeq !== app.navSeq || app.game !== g || g.finished) return;
+  let moveCommitted = false;
+  let leadRendered = false;
+  let streamTailEl = null;
+  let tocCount = 0;
 
-    const canonical = parsed.title;
+  const commitMove = (canonical) => {
+    if (moveCommitted) return;
+    moveCommitted = true;
 
     if (isStart) {
       g.path = [canonical];
@@ -1188,7 +1203,6 @@ async function navigateToArticle(
       bumpScoreUI();
     }
 
-    app.navLoading = false;
     renderTrail();
 
     if (g.roomCode && !isStart && !isResume) {
@@ -1200,44 +1214,116 @@ async function navigateToArticle(
         finished: false
       }).catch(() => {});
     }
+  };
 
+  const checkImmediateWin = (canonical) => {
     if (!isStart && !isResume && normTitle(canonical) === normTitle(g.target)) {
+      commitMove(canonical);
+      app.navLoading = false;
       shell.classList.remove('is-loading');
       layout.classList.remove('is-loading-nav');
       hideArticleStatusBar();
+      controller.abort(new DOMException('Target reached', 'AbortError'));
       handleWin();
+      return true;
+    }
+    return false;
+  };
+
+  try {
+    const parsed = await fetchWikiArticle(title, g.lang, {
+      banHubs: g.banHubs,
+      lockInfobox: g.lockInfobox,
+      signal: controller.signal,
+      onCanonical: (canonical) => {
+        if (reqSeq !== app.navSeq || app.game !== g || g.finished) return;
+        checkImmediateWin(canonical);
+      },
+      onLead: (lead) => {
+        if (reqSeq !== app.navSeq || app.game !== g || g.finished) return;
+        const canonical = lead.title;
+        if (checkImmediateWin(canonical)) return;
+
+        commitMove(canonical);
+        leadRendered = true;
+        app.navLoading = false;
+        $('backBtn').disabled = g.path.length < 2;
+
+        tocCount = (lead.sections || []).length;
+        renderArticleToc(lead.sections, { streaming: !lead.fromCache });
+        renderArticleAside(lead.asideNodes, g.lockInfobox);
+
+        const header = document.createElement('div');
+        header.className = 'wiki-article-header';
+        header.innerHTML = `
+          <h1 class="wiki-article-title">${escapeHtml(canonical)}</h1>
+          <div class="wiki-article-sub">From Wikipedia (${escapeHtml(getLanguage(g.lang).native)}) · Click any highlighted link in the article</div>
+        `;
+
+        if (!lead.fromCache) {
+          streamTailEl = document.createElement('div');
+          streamTailEl.className = 'wiki-stream-tail';
+          streamTailEl.innerHTML = `<progress aria-label="Streaming remaining sections" class="loading-spinner sm"></progress><span>Streaming rest of article…</span>`;
+          art.replaceChildren(header, ...lead.bodyNodes, streamTailEl);
+        } else {
+          art.replaceChildren(header, ...lead.bodyNodes);
+        }
+
+        shell.classList.remove('is-loading');
+        layout.classList.remove('is-loading-nav');
+        hideArticleStatusBar();
+
+        // Start (or resume) timer as soon as Section 0 (Lead + Infobox) is readable & playable
+        if (!g.timerStarted) {
+          g.timerStarted = true;
+          g.paused = false;
+          g.resumeAt = Date.now();
+          startTimer();
+        }
+
+        persistActiveGame(true);
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      },
+      onSection: (chunk) => {
+        if (reqSeq !== app.navSeq || app.game !== g || g.finished || !leadRendered) return;
+        if (chunk.asideNodes?.length) {
+          appendArticleAside(chunk.asideNodes, g.lockInfobox);
+        }
+        if (chunk.sections?.length) {
+          tocCount += chunk.sections.length;
+          appendArticleToc(chunk.sections);
+        }
+        if (chunk.bodyNodes?.length) {
+          const frag = document.createDocumentFragment();
+          frag.append(...chunk.bodyNodes);
+          if (streamTailEl && streamTailEl.parentNode === art) {
+            art.insertBefore(frag, streamTailEl);
+          } else {
+            art.appendChild(frag);
+          }
+        }
+      }
+    });
+
+    if (reqSeq !== app.navSeq || app.game !== g || g.finished) return;
+
+    streamTailEl?.remove();
+    streamTailEl = null;
+
+    if (tocCount === 0 && (!parsed.sections || parsed.sections.length === 0)) {
+      renderArticleToc([], { streaming: false });
+    }
+  } catch (err) {
+    streamTailEl?.remove();
+    streamTailEl = null;
+
+    if (isAbortError(err, controller.signal) || reqSeq !== app.navSeq || app.game !== g || g.finished) {
       return;
     }
 
-    // Populate Left Rail (Contents) & Right Rail (Quick Facts / Infobox)
-    renderArticleToc(parsed.sections);
-    renderArticleAside(parsed.asideNodes, g.lockInfobox);
-
-    // Populate Center Column (Pure Editorial Prose)
-    const header = document.createElement('div');
-    header.className = 'wiki-article-header';
-    header.innerHTML = `
-      <h1 class="wiki-article-title">${escapeHtml(canonical)}</h1>
-      <div class="wiki-article-sub">From Wikipedia (${escapeHtml(getLanguage(g.lang).native)}) · Click any highlighted link in the article</div>
-    `;
-    art.replaceChildren(header, ...parsed.bodyNodes);
-
-    shell.classList.remove('is-loading');
-    layout.classList.remove('is-loading-nav');
-    hideArticleStatusBar();
-
-    // Start (or resume) timer only once the initial/resumed page actually renders
-    if (!g.timerStarted) {
-      g.timerStarted = true;
-      g.paused = false;
-      g.resumeAt = Date.now();
-      startTimer();
-    }
-
-    persistActiveGame(true);
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  } catch (err) {
-    if (isAbortError(err, controller.signal) || reqSeq !== app.navSeq || app.game !== g || g.finished) {
+    // If Lead already rendered cleanly, keep the playable article intact instead of showing a full error
+    if (leadRendered) {
+      if (tocCount === 0) renderArticleToc([], { streaming: false });
       return;
     }
 
@@ -1848,6 +1934,7 @@ function initApp() {
   renderVipAndContrast();
   startUtcCountdown();
 
+
   window.addEventListener('tangent:themechange', renderThemeButton);
 
   // Header controls
@@ -2203,6 +2290,54 @@ function initApp() {
       if (link) link.click();
     }
   });
+
+  // Delegated TOC section scroll handler (works smoothly as sections stream in)
+  $('tocList')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-sec-id]');
+    if (!btn) return;
+    playTap();
+    const targetEl = document.getElementById(btn.dataset.secId);
+    if (targetEl) {
+      const y = targetEl.getBoundingClientRect().top + window.scrollY - 134;
+      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+    }
+  });
+
+  // Decoupled intent-driven prefetching (works even when hover previews are OFF in Boss Mode!)
+  // - Hover pause (80ms) -> low-priority max-1 prefetch
+  // - pointerdown -> high-intent prefetch (~100ms head start before click)
+  let hoverPrefetchTimer = null;
+  $('readerLayout').addEventListener('pointerover', (e) => {
+    if (e.pointerType === 'touch') return;
+    const link = e.target.closest('a[data-wiki-title]');
+    if (!link || !app.game || app.game.paused || app.game.finished) return;
+    if (link.dataset.lockedInfobox === 'true' || link.dataset.bannedHub === 'true') return;
+    clearTimeout(hoverPrefetchTimer);
+    const title = link.dataset.wikiTitle;
+    const lang = app.game.lang || 'en';
+    hoverPrefetchTimer = setTimeout(() => {
+      if (app.game && !app.game.paused && !app.game.finished) {
+        prefetchWikiArticle(title, lang, { highIntent: false });
+      }
+    }, 80);
+  });
+
+  $('readerLayout').addEventListener('pointerout', (e) => {
+    if (e.pointerType === 'touch') return;
+    const link = e.target.closest('a[data-wiki-title]');
+    if (!link) return;
+    clearTimeout(hoverPrefetchTimer);
+  });
+
+  $('readerLayout').addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    const link = e.target.closest('a[data-wiki-title]');
+    if (!link || !app.game || app.game.paused || app.game.finished) return;
+    if (link.dataset.lockedInfobox === 'true' || link.dataset.bannedHub === 'true') return;
+    clearTimeout(hoverPrefetchTimer);
+    prefetchWikiArticle(link.dataset.wikiTitle, app.game.lang || 'en', { highIntent: true });
+  });
+
 
   // Mount sleek Wikipedia Hovercard on #readerLayout (covers both Center Prose and Right Infobox Rail)
   app.hovercard = createHovercard({

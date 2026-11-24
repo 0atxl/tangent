@@ -3,8 +3,8 @@
  * for zero-config local development (`npm run dev`).
  */
 
-const REST_URL = process.env.UPSTASH_REDIS_REST_URL;
-const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const REST_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const HAS_UPSTASH = Boolean(REST_URL && REST_TOKEN);
 
 // Persist in-memory store across HMR/reloads in local dev

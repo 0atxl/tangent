@@ -24,6 +24,7 @@ function localApiPlugin() {
 
           if (pathname === '/api/record') relPath = 'api/record.js';
           else if (pathname === '/api/submit') relPath = 'api/submit.js';
+          else if (pathname === '/api/wiki') relPath = 'api/wiki.js';
           else if (pathname === '/api/room/create') relPath = 'api/room/create.js';
           else if (pathname === '/api/room/join') relPath = 'api/room/join.js';
           else if (pathname === '/api/room/start') relPath = 'api/room/start.js';
@@ -68,14 +69,24 @@ function localApiPlugin() {
 
           const mockRes = {
             statusCode: 200,
+            get headersSent() {
+              return res.headersSent;
+            },
             setHeader(k, v) {
               res.setHeader(k, v);
               return this;
+            },
+            flushHeaders() {
+              if (typeof res.flushHeaders === 'function') res.flushHeaders();
             },
             status(code) {
               this.statusCode = code;
               res.statusCode = code;
               return this;
+            },
+            write(chunk) {
+              res.statusCode = this.statusCode;
+              return res.write(chunk);
             },
             json(payload) {
               if (!res.headersSent) {
@@ -87,6 +98,10 @@ function localApiPlugin() {
             end(data) {
               res.statusCode = this.statusCode;
               res.end(data);
+            },
+            destroy(err) {
+              if (typeof res.destroy === 'function') res.destroy(err);
+              else res.end();
             }
           };
 

@@ -3,7 +3,7 @@
  * Uses native [popover="manual"] with WCAG 3.2.1 safe tooltip semantics
  * (never steals focus) and viewport-clamped positioning.
  */
-import { fetchWikiSummary, prefetchWikiArticle } from './wikipedia.js';
+import { fetchWikiSummary } from './wikipedia.js';
 
 export function createHovercard({ container, getLang, isEnabled }) {
   const card = document.getElementById('wikiHovercard');
@@ -155,11 +155,7 @@ export function createHovercard({ container, getLang, isEnabled }) {
     }
 
     const isBanned = link.dataset.bannedHub === 'true';
-    const isLocked = link.dataset.lockedInfobox === 'true';
     renderSummary(summary, isBanned);
-    if (!isBanned && !isLocked) {
-      prefetchWikiArticle(summary.title || title, getLang());
-    }
     // Re-clamp once final image/text height is known
     requestAnimationFrame(() => {
       if (token === activeToken && activeLink === link) {
