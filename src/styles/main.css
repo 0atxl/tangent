@@ -2024,13 +2024,15 @@ dialog::backdrop {
     left 0.2s cubic-bezier(0.2, 0.95, 0.25, 1),
     top 0.2s cubic-bezier(0.2, 0.95, 0.25, 1),
     background 0.16s,
-    border-color 0.16s;
+    border-color 0.16s,
+    color 0.16s;
 }
 
-.pg-shy-btn.is-armed {
+.pg-shy-btn.is-armed,
+.pg-shy-btn.is-armed:hover:not(:disabled) {
   background: var(--pop-coral);
   border-color: var(--pop-coral);
-  color: #ffffff;
+  color: var(--pop-ink-on-pop);
 }
 
 .pg-nevermind {
@@ -2058,10 +2060,11 @@ dialog::backdrop {
   flex-wrap: wrap;
 }
 
-.btn-danger {
+.btn-danger,
+.btn-danger:hover:not(:disabled) {
   background: var(--pop-coral);
   border-color: var(--pop-coral);
-  color: #ffffff;
+  color: var(--pop-ink-on-pop);
 }
 
 .btn-danger:hover:not(:disabled) {
