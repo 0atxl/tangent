@@ -81,6 +81,15 @@
   font-size: inherit;
 }
 
+.wiki-article [id^="wiki-sec-"] {
+  scroll-margin-top: 136px;
+}
+
+.wiki-article img:not(.wiki-inline-icon) {
+  max-width: 100%;
+  height: auto;
+}
+
 .wiki-article ul,
 .wiki-article ol {
   margin: 0 0 1.1em;
@@ -249,6 +258,7 @@
   max-height: 210px;
   max-width: 100%;
   width: auto;
+  height: auto;
   object-fit: contain;
   margin: 4px auto;
   display: block;

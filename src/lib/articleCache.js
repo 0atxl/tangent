@@ -9,7 +9,7 @@
 const DB_NAME = 'tangent_wiki_cache';
 const STORE_NAME = 'articles';
 const DB_VERSION = 1;
-const CACHE_SCHEMA_VERSION = 2;
+const CACHE_SCHEMA_VERSION = 3;
 const MAX_MEM_ENTRIES = 60;
 const MAX_IDB_ENTRIES = 150;
 const TTL_MS = 24 * 60 * 60 * 1000;

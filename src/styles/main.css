@@ -1125,7 +1125,7 @@ main {
 /* ==================== In-Game View ==================== */
 .game-bar {
   position: sticky;
-  top: 62px;
+  top: var(--site-header-h, 62px);
   z-index: 30;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
@@ -2340,7 +2340,7 @@ dialog::backdrop {
     bottom: -4px;
   }
   .game-bar {
-    top: 96px;
+    top: var(--site-header-h, 96px);
   }
   .article-shell {
     padding: 18px 16px 32px;

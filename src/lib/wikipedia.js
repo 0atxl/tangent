@@ -959,10 +959,9 @@ function normalizeImages(root, { isBelowFold = false } = {}) {
 
     if (isTinyIcon) {
       img.classList.add('wiki-inline-icon');
-    } else {
-      img.removeAttribute('width');
-      img.removeAttribute('height');
     }
+    // Keep intrinsic width/height attributes on all images so lazy-loaded figures reserve
+    // their exact aspect-ratio height before download (prevents layout shifts during TOC jumps).
   });
 }
 

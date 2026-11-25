@@ -111,7 +111,8 @@ const app = {
   roomPollInterval: null,
   countdownInterval: null,
   hovercard: null,
-  toastTimer: null
+  toastTimer: null,
+  tocScrollCancel: null
 };
 
 // ==================== Toast Helper ====================
@@ -271,6 +272,8 @@ function showView(name) {
 
   if (name !== 'viewGame') {
     stopTimer();
+    app.tocScrollCancel?.();
+    app.tocScrollCancel = null;
     app.closePauseGate?.();
     app.closePauseGate = null;
     app.pauseGateOpen = false;
@@ -2518,16 +2521,100 @@ function initApp() {
     }
   });
 
-  // Delegated TOC section scroll handler (works smoothly as sections stream in)
+  // Keep --site-header-h synced so sticky .game-bar never tucks behind wrapped mobile headers
+  const siteHeader = document.querySelector('.site-header');
+  if (siteHeader) {
+    const syncHeaderHeight = () => {
+      document.documentElement.style.setProperty(
+        '--site-header-h',
+        `${Math.round(siteHeader.getBoundingClientRect().height)}px`
+      );
+    };
+    syncHeaderHeight();
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(syncHeaderHeight).observe(siteHeader);
+    }
+  }
+
+  // Delegated TOC section scroll handler (works on 1st click even with deferred sections)
   $('tocList')?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-sec-id]');
     if (!btn) return;
     playTap();
     const targetEl = document.getElementById(btn.dataset.secId);
-    if (targetEl) {
-      const y = targetEl.getBoundingClientRect().top + window.scrollY - 134;
-      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+    if (!targetEl) return;
+
+    app.tocScrollCancel?.();
+    const ctrl = new AbortController();
+    let rafId = null;
+    app.tocScrollCancel = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      ctrl.abort();
+    };
+
+    // Reveal deferred sections up to and including the target section so layout height
+    // is exact before computing the scroll offset (content-visibility: auto otherwise
+    // estimates unvisited sections at 420px and stops smooth scrolls thousands of px short).
+    const topTargetSec = targetEl.closest('#wikiArticle > section');
+    for (const sec of document.querySelectorAll('#wikiArticle > section.wiki-section-deferred')) {
+      if (sec === topTargetSec || sec.contains(targetEl)) {
+        sec.classList.remove('wiki-section-deferred');
+        break;
+      }
+      if (sec.compareDocumentPosition(targetEl) & Node.DOCUMENT_POSITION_FOLLOWING) {
+        sec.classList.remove('wiki-section-deferred');
+      } else {
+        break;
+      }
     }
+
+    const getOffset = () => {
+      const siteBottom = siteHeader?.getBoundingClientRect().bottom || 0;
+      const barBottom = document.querySelector('#viewGame .game-bar')?.getBoundingClientRect().bottom || 0;
+      return Math.round(Math.max(siteBottom, barBottom, 120)) + 14;
+    };
+
+    const getTargetTop = () => {
+      const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const rawTop = targetEl.getBoundingClientRect().top + window.scrollY - getOffset();
+      return Math.max(0, Math.min(rawTop, maxScroll));
+    };
+
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      window.scrollTo({ top: getTargetTop(), behavior: 'instant' });
+      return;
+    }
+
+    // Cancel automatic glide if the user manually scrolls or interacts
+    const onUserInterrupt = () => app.tocScrollCancel?.();
+    window.addEventListener('wheel', onUserInterrupt, { passive: true, once: true, signal: ctrl.signal });
+    window.addEventListener('touchstart', onUserInterrupt, { passive: true, once: true, signal: ctrl.signal });
+
+    const startY = window.scrollY;
+    const dist = Math.abs(getTargetTop() - startY);
+    if (dist <= 2) return;
+
+    // Snappy ease-out cubic glide (260ms-520ms regardless of 500px or 35,000px distance)
+    // that tracks live target coordinates each frame so mid-scroll layout shifts never miss.
+    const duration = Math.min(520, Math.max(260, 220 + dist * 0.018));
+    const startTs = performance.now();
+
+    const step = (now) => {
+      if (ctrl.signal.aborted || !targetEl.isConnected) return;
+      const raw = Math.min(1, (now - startTs) / duration);
+      const eased = 1 - Math.pow(1 - raw, 3);
+      const liveTarget = getTargetTop();
+      const nextY = raw >= 1 ? liveTarget : startY + (liveTarget - startY) * eased;
+      window.scrollTo({ top: nextY, behavior: 'instant' });
+      if (raw < 1) {
+        rafId = requestAnimationFrame(step);
+      } else {
+        rafId = null;
+        ctrl.abort();
+      }
+    };
+
+    rafId = requestAnimationFrame(step);
   });
 
   // Decoupled intent-driven prefetching (works even when hover previews are OFF in Boss Mode!)
